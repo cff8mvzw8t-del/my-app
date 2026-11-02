@@ -25,6 +25,7 @@ export async function preparePwa(dist, base = '/') {
       html, body { margin: 0; background: #0D080C; overflow: hidden; overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
       body { direction: ltr; }
       #root { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; overflow: hidden; direction: ltr; background: #000; }
+      @media (display-mode: standalone) { html, body, #root { height: 100vh; } }
     </style>
     <link rel="manifest" href="${base}manifest.webmanifest">
     <link rel="apple-touch-icon" href="${base}icons/apple-touch-icon.png">

@@ -457,6 +457,16 @@ export default function App() {
       #root { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; overflow: hidden; direction: ltr; background: #000; }
       #app-safe-area { min-height: 0; padding-bottom: 0 !important; }
       #app-bottom-navigation { direction: ltr; padding-bottom: max(18px, env(safe-area-inset-bottom, 0px)); }
+      @media (display-mode: standalone) {
+        html, body, #root { height: 100vh; }
+        #app-bottom-navigation {
+          min-height: 82px;
+          padding-top: 10px;
+          padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+          border-top-left-radius: 30px;
+          border-top-right-radius: 30px;
+        }
+      }
     `;
     document.head.appendChild(safeAreaStyle);
     return () => {

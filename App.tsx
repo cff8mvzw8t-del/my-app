@@ -450,7 +450,9 @@ export default function App() {
     // Rows already use row-reverse for Hebrew. Inheriting RTL from the HTML
     // element would reverse them a second time and move flex-end text left.
     safeAreaStyle.textContent = `
-      html, body { background: #000; margin: 0; overflow: hidden; overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
+      /* iOS may paint a system-owned strip beyond the page viewport. Match
+         the last navigation gradient stop there; the app itself stays black. */
+      html, body { background: #0D080C; margin: 0; overflow: hidden; overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
       #root { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; overflow: hidden; direction: ltr; background: #000; }
       #app-safe-area { min-height: 0; padding-bottom: 0 !important; }
       #app-bottom-navigation { direction: ltr; padding-bottom: max(18px, env(safe-area-inset-bottom, 0px)); }

@@ -1,4 +1,5 @@
 import type { Person, GuardPost, GuardTimeSlot, GuardAssignment, RosterEntry, TaskItem, ReadinessShift } from './App';
+import { normalizePersonalDate } from './personalDates';
 
 export type SavedAppData = {
   people: Person[];
@@ -22,6 +23,7 @@ const strings = (value: unknown): value is string[] => Array.isArray(value) && v
 const fields = (value: unknown, keys: string[]) => record(value) && keys.every((key) => typeof value[key] === 'string');
 const rows = (value: unknown, check: (item: Record<string, unknown>) => boolean): value is Record<string, unknown>[] => Array.isArray(value) && value.every((item) => record(item) && check(item));
 const unique = (items: Record<string, unknown>[], key: string) => new Set(items.map((item) => item[key])).size === items.length;
+const optionalDate = (value: unknown) => value === undefined || (typeof value === 'string' && (value === '' || normalizePersonalDate(value) === value));
 
 function isAppData(value: unknown): value is SavedAppData {
   if (!record(value)) return false;
@@ -30,6 +32,8 @@ function isAppData(value: unknown): value is SavedAppData {
     && !!person.id && !!(person.name as string).trim() && strings(person.statusTags)
     && (person.group === undefined || ['lone', 'married', 'other'].includes(person.group as string))
     && (person.isCommander === undefined || typeof person.isCommander === 'boolean')
+    && optionalDate(person.birthday)
+    && (person.partner === undefined || (record(person.partner) && typeof person.partner.name === 'string' && optionalDate(person.partner.birthday) && optionalDate(person.partner.relationshipStart)))
     && (person.photoUri === undefined || typeof person.photoUri === 'string')
     && (person.statusDetails === undefined || (record(person.statusDetails) && Object.entries(person.statusDetails).every(([key, text]) => ['medical', 'welfare', 'fitness', 'discipline', 'values'].includes(key) && typeof text === 'string'))))) return false;
   if (!rows(value.guardPosts, (post) => fields(post, ['id', 'place', 'details'])) || !unique(value.guardPosts, 'id')) return false;

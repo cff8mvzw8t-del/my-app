@@ -32,6 +32,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run typecheck
       - run: pnpm run test:pwa
+      - run: pnpm run test:dates
       - run: pnpm run build:web
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

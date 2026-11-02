@@ -25,6 +25,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { colors as C, radius, spacing } from './theme';
 import { createBackup, loadDeviceData, parseBackup, saveDeviceData, type SavedAppData } from './deviceStorage';
 import { personGroups, normalizedPersonName, getReadinessCandidates, assignReadinessPerson, reconcileReadinessPeople } from './peopleAndReadiness';
+import { normalizePersonalDate, displayPersonalDate, isValidPastDate, relationshipDuration } from './personalDates';
 
 type DomainTab = 'medical' | 'welfare' | 'fitness' | 'education' | 'readiness';
 type Tab = 'home' | 'people' | 'guards' | 'roster' | 'tasks' | DomainTab;
@@ -40,6 +41,8 @@ export type Person = {
   statusDetails?: Partial<Record<PersonStatusField, string>>;
   group?: 'lone' | 'married' | 'other';
   isCommander?: boolean;
+  birthday?: string;
+  partner?: { name: string; birthday?: string; relationshipStart?: string };
 };
 export type ReadinessShift = { id: string; time: string; fighterIds: string[]; commanderId: string };
 const personStatusFields = [
@@ -742,7 +745,15 @@ export default function App() {
 
   function savePerson(person: Person) {
     if (people.some((item) => item.id !== person.id && normalizedPersonName(item.name) === normalizedPersonName(person.name))) return;
-    const savedPerson = { ...person, name: person.name.trim().replace(/\s+/g, ' '), id: person.id || `p${Date.now()}` };
+    if (![person.birthday, person.partner?.birthday, person.partner?.relationshipStart].every((date) => isValidPastDate(date))) return;
+    const savedPerson = {
+      ...person, name: person.name.trim().replace(/\s+/g, ' '), id: person.id || `p${Date.now()}`,
+      birthday: normalizePersonalDate(person.birthday),
+      partner: person.partner ? {
+        name: person.partner.name.trim(), birthday: normalizePersonalDate(person.partner.birthday),
+        relationshipStart: normalizePersonalDate(person.partner.relationshipStart),
+      } : undefined,
+    };
     const nextPeople = people.some((item) => item.id === savedPerson.id) ? people.map((item) => item.id === savedPerson.id ? savedPerson : item) : [savedPerson, ...people];
     setReadinessShifts((current) => reconcileReadinessPeople(current, nextPeople));
     setPeople((current) => current.some((item) => item.id === savedPerson.id)
@@ -1456,6 +1467,14 @@ function PersonModal({ profile, people, onClose, onEdit, onSave }: {
   React.useEffect(() => setDraft(profile?.person ?? null), [profile?.person]);
   if (!profile || !draft) return null;
 
+  function updateDraft(changes: Partial<Person>) {
+    setDraft((current) => current ? { ...current, ...changes } : current);
+  }
+
+  function updatePartner(changes: Partial<NonNullable<Person['partner']>>) {
+    setDraft((current) => current ? { ...current, partner: { name: '', ...current.partner, ...changes } } : current);
+  }
+
   async function choosePhoto() {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -1474,7 +1493,8 @@ function PersonModal({ profile, people, onClose, onEdit, onSave }: {
 
   if (profile.editing) {
     const duplicateName = people.some((person) => person.id !== draft.id && normalizedPersonName(person.name) === normalizedPersonName(draft.name));
-    const canSave = !!draft.name.trim() && !duplicateName;
+    const validDates = [draft.birthday, draft.partner?.birthday, draft.partner?.relationshipStart].every((date) => isValidPastDate(date));
+    const canSave = !!draft.name.trim() && !duplicateName && validDates;
     return (
       <Sheet visible onClose={onClose}>
         <ScrollView style={styles.personSheetScroll} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
@@ -1487,15 +1507,24 @@ function PersonModal({ profile, people, onClose, onEdit, onSave }: {
           </View>
         </View>
         <Text style={styles.formLabel}>שם מלא</Text>
-        <TextInput value={draft.name} onChangeText={(name) => setDraft({ ...draft, name })} placeholder="שם פרטי ומשפחה" placeholderTextColor={C.muted} style={styles.formInput} textAlign="right" />
+        <TextInput value={draft.name} onChangeText={(name) => updateDraft({ name })} placeholder="שם פרטי ומשפחה" placeholderTextColor={C.muted} style={styles.formInput} textAlign="right" />
         {duplicateName && <Text style={styles.peopleDeleteText}>השם כבר קיים ברשימה. אפשר לערוך את הכרטיס הקיים.</Text>}
+        <PersonalDateField label="יום הולדת" value={draft.birthday} onChange={(birthday) => updateDraft({ birthday })} />
         <ChoiceGroup label="קבוצה" options={personGroups.map((group) => group.label)} value={personGroups.find((group) => group.key === (draft.group ?? 'other'))!.label} onChange={(label) => setDraft({ ...draft, group: personGroups.find((group) => group.label === label)!.key })} />
         <ChoiceGroup label="סוג תפקיד" options={['לוחם', 'מפקד']} value={draft.isCommander ? 'מפקד' : 'לוחם'} onChange={(value) => setDraft({ ...draft, isCommander: value === 'מפקד' })} />
         <Text style={styles.formHint}>שינוי בין לוחם למפקד יפנה שיבוץ כפכ״פ שאינו מתאים לתפקיד החדש.</Text>
         <Text style={styles.formLabel}>עיר</Text>
-        <TextInput value={draft.city} onChangeText={(city) => setDraft({ ...draft, city })} placeholder="למשל: חיפה" placeholderTextColor={C.muted} style={styles.formInput} textAlign="right" />
+        <TextInput value={draft.city} onChangeText={(city) => updateDraft({ city })} placeholder="למשל: חיפה" placeholderTextColor={C.muted} style={styles.formInput} textAlign="right" />
         <Text style={styles.formLabel}>תפקיד / פק״ל</Text>
-        <TextInput value={draft.role} onChangeText={(role) => setDraft({ ...draft, role })} placeholder="תפקיד או תחום אחריות" placeholderTextColor={C.muted} style={styles.formInput} textAlign="right" />
+        <TextInput value={draft.role} onChangeText={(role) => updateDraft({ role })} placeholder="תפקיד או תחום אחריות" placeholderTextColor={C.muted} style={styles.formInput} textAlign="right" />
+        <ChoiceGroup label="בת זוג" options={['אין', 'יש']} value={draft.partner ? 'יש' : 'אין'} onChange={(value) => setDraft((current) => current ? { ...current, partner: value === 'יש' ? current.partner ?? { name: '' } : undefined } : current)} />
+        {draft.partner && <View>
+          <Text style={styles.formLabel}>שם בת הזוג</Text>
+          <TextInput value={draft.partner.name} onChangeText={(name) => updatePartner({ name })} accessibilityLabel="שם בת הזוג" placeholder="שם בת הזוג" placeholderTextColor={C.muted} style={styles.formInput} />
+          <PersonalDateField label="יום הולדת של בת הזוג" value={draft.partner.birthday} onChange={(birthday) => updatePartner({ birthday })} />
+          <PersonalDateField label="תחילת הקשר" value={draft.partner.relationshipStart} onChange={(relationshipStart) => updatePartner({ relationshipStart })} />
+          <Text style={styles.formHint}>כמה זמן ביחד: {relationshipDuration(draft.partner.relationshipStart)}</Text>
+        </View>}
         <Text style={styles.formLabel}>סטטוסים נוספים</Text>
         <TextInput
           value={draft.statusTags.join(', ')}
@@ -1529,6 +1558,7 @@ function PersonModal({ profile, people, onClose, onEdit, onSave }: {
             />
           </View>
         ))}
+        {!validDates && <Text style={styles.peopleDeleteText}>יש לתקן את התאריכים המסומנים לפני השמירה.</Text>}
         <Pressable disabled={!canSave} style={[styles.primaryButton, !canSave && styles.primaryButtonDisabled]} onPress={() => onSave(draft)}><Text style={styles.primaryButtonText}>שמירת פרטים</Text></Pressable>
         <Text style={styles.sheetFootnote}>בדוק את מצב השמירה בתחתית המסך אחרי שמירת הפרטים</Text>
         </ScrollView>
@@ -1545,11 +1575,19 @@ function PersonModal({ profile, people, onClose, onEdit, onSave }: {
       {!!person.statusTags.length && <View style={styles.profileStatusTags}>{person.statusTags.map((tag) => <Pill key={tag} label={tag} tone="neutral" />)}</View>}
       <View style={styles.profileDetails}>
         <DetailRow label="עיר" value={person.city || 'לא צוין'} />
+        <DetailRow label="יום הולדת" value={displayPersonalDate(person.birthday) || 'לא צוין'} />
         <DetailRow label="תפקיד / פק״ל" value={person.role || 'לא צוין'} />
         <DetailRow label="קבוצה" value={personGroups.find((group) => group.key === (person.group ?? 'other'))?.label ?? 'השאר'} />
         <DetailRow label="סוג תפקיד" value={person.isCommander ? 'מפקד' : 'לוחם'} />
         <DetailRow label="סטטוס" value={person.status} last />
       </View>
+      {person.partner && <View style={styles.profileDetails}>
+        <Text style={styles.sectionTitle}>בת זוג</Text>
+        <DetailRow label="שם" value={person.partner.name || 'לא צוין'} />
+        <DetailRow label="יום הולדת" value={displayPersonalDate(person.partner.birthday) || 'לא צוין'} />
+        <DetailRow label="תחילת הקשר" value={displayPersonalDate(person.partner.relationshipStart) || 'לא צוין'} />
+        <DetailRow label="כמה זמן ביחד" value={relationshipDuration(person.partner.relationshipStart)} last />
+      </View>}
       <Text style={[styles.sectionTitle, { marginTop: 20 }]}>סטטוס אישי</Text>
       {personStatusFields.map(({ key, label }) => (
         <View key={key} style={styles.personStatusDetail}>
@@ -1566,6 +1604,15 @@ function PersonModal({ profile, people, onClose, onEdit, onSave }: {
 
 function DetailRow({ label, value, last = false }: { label: string; value: string; last?: boolean }) {
   return <View style={[styles.detailRow, !last && styles.withTopBorder]}><Text style={styles.detailValue}>{value}</Text><Text style={styles.detailLabel}>{label}</Text></View>;
+}
+
+function PersonalDateField({ label, value, onChange }: { label: string; value?: string; onChange: (value: string) => void }) {
+  const valid = isValidPastDate(value);
+  return <View>
+    <Text style={styles.formLabel}>{label}</Text>
+    <TextInput accessibilityLabel={label} value={displayPersonalDate(value)} onChangeText={onChange} placeholder="יום/חודש/שנה — 24/06/2002" placeholderTextColor={C.muted} style={styles.formInput} maxLength={10} />
+    {!valid && <Text style={styles.peopleDeleteText}>יש להזין תאריך תקין שאינו בעתיד, למשל 24/06/2002.</Text>}
+  </View>;
 }
 
 function GuardModal({ shift, onClose, onSave }: { shift: GuardPost | null; onClose: () => void; onSave: (shift: GuardPost) => void }) {

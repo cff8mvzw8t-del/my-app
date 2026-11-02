@@ -451,8 +451,7 @@ export default function App() {
     // element would reverse them a second time and move flex-end text left.
     safeAreaStyle.textContent = `
       html, body { background: #000; margin: 0; overflow: hidden; overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
-      #root { position: fixed; inset: 0; width: 100%; height: 100%; min-height: 0; overflow: hidden; direction: ltr; background: #000; }
-      @supports (height: 100dvh) { #root { height: 100dvh; } }
+      #root { position: absolute; inset: 0; width: 100%; height: auto; min-height: 0; overflow: hidden; direction: ltr; background: #000; }
       #app-safe-area { min-height: 0; padding-bottom: 0 !important; }
       #app-bottom-navigation { direction: ltr; padding-bottom: max(18px, env(safe-area-inset-bottom, 0px)); }
     `;

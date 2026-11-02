@@ -23,13 +23,11 @@ export async function preparePwa(dist, base = '/') {
   html = html.replace('</head>', `
     <style id="mobile-shell">
       html, body { margin: 0; background: #000; overflow: hidden; overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
-      #root { position: fixed; inset: 0; width: 100%; height: 100%; min-height: 0; overflow: hidden; direction: ltr; background: #000; }
-      @supports (height: 100dvh) { #root { height: 100dvh; } }
+      #root { position: absolute; inset: 0; width: 100%; height: auto; min-height: 0; overflow: hidden; direction: ltr; background: #000; }
     </style>
     <link rel="manifest" href="${base}manifest.webmanifest">
     <link rel="apple-touch-icon" href="${base}icons/apple-touch-icon.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="המסגרת שלי">
     <script src="${base}pwa-register.js" defer></script>
   </head>`);

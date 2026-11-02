@@ -30,6 +30,9 @@ test('production export prepares a scoped manifest and complete offline shell', 
     assert.match(html, /lang="he" dir="rtl"/);
     assert.match(html, /direction: ltr/);
     assert.match(html, /background: #000/);
+    // Deprecated translucent status-bar mode and dvh can reserve an extra
+    // status-bar-height strip in installed iPhone web apps (WebKit 313800).
+    assert.doesNotMatch(html, /black-translucent|100dvh/);
     assert.match(html, /\/my-app\/pwa-register.js/);
 
     const handlers = {};

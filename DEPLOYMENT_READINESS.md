@@ -2,6 +2,8 @@
 
 ## Implementation checkpoint
 
+Commit `a234580` was pushed to `master`. GitHub Actions run `41510938457` passed dependency installation, TypeScript checking, offline logic tests, and production build. It stopped at `actions/configure-pages` because Pages was not yet enabled. The owner subsequently confirmed selecting GitHub Actions as the Pages source. The connector cannot rerun Actions jobs (403), so this documentation update triggers a fresh deployment through the already authenticated Git push. No additional hosting connection is required. Production status must be verified after that run.
+
 The repository now exists at `https://github.com/cff8mvzw8t-del/my-app`, with `master` as its default branch. The connector successfully read its package.json and reports push/admin access. The local initial commit matches the remote.
 
 Added a Pages Actions workflow, `/my-app/` production base path, manifest and Home Screen fox icons, build-time asset precaching, and an explicit update prompt. Offline logic tests, TypeScript checking, and a production export with the Pages base path passed. The worker caches only public application assets and does not modify localStorage. Actual iPhone offline reopening still needs a device check. Earlier connection-state observations below are historical.

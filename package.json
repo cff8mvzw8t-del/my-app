@@ -6,7 +6,8 @@
   "scripts": {
     "start": "expo start",
     "typecheck": "tsc --noEmit",
-    "build:web": "expo export --platform web",
+    "build:web": "expo export --platform web && node scripts/prepare-pwa.mjs",
+    "test:pwa": "node --test scripts/pwa.test.mjs",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web"

@@ -1,5 +1,11 @@
 # Deployment readiness — 2026-11-02
 
+## Implementation checkpoint
+
+The repository now exists at `https://github.com/cff8mvzw8t-del/my-app`, with `master` as its default branch. The connector successfully read its package.json and reports push/admin access. The local initial commit matches the remote.
+
+Added a Pages Actions workflow, `/my-app/` production base path, manifest and Home Screen fox icons, build-time asset precaching, and an explicit update prompt. Offline logic tests, TypeScript checking, and a production export with the Pages base path passed. The worker caches only public application assets and does not modify localStorage. Actual iPhone offline reopening still needs a device check. Earlier connection-state observations below are historical.
+
 ## Target
 
 Run the existing application on one iPhone with the laptop switched off, using GitHub Pages and adding offline support. No App Store distribution, additional hosting account, or database is required for this first version.

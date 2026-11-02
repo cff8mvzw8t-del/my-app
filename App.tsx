@@ -27,7 +27,7 @@ import { colors as C, radius, spacing } from './theme';
 import { createBackup, loadDeviceData, parseBackup, saveDeviceData, type SavedAppData } from './deviceStorage';
 import { personGroups, normalizedPersonName, getReadinessCandidates, assignReadinessPerson, reconcileReadinessPeople } from './peopleAndReadiness';
 import { normalizePersonalDate, displayPersonalDate, isValidPastDate, relationshipDuration, calendarKey, clampCalendarParts, type CalendarParts } from './personalDates';
-import { normalizePhotoFraming, photoFrameRect, type PhotoFraming } from './photoFraming';
+import { normalizePhotoFraming, photoFrameRect, PASSPORT_ASPECT_RATIO, type PhotoFraming } from './photoFraming';
 import { prepareProfilePhoto } from './profilePhotoUri';
 
 type DomainTab = 'medical' | 'welfare' | 'fitness' | 'education' | 'readiness';
@@ -257,18 +257,21 @@ function Avatar({ person, size = 48 }: { person: Person; size?: number }) {
 }
 
 function PersonPhoto({ person, size = 82 }: { person: Person; size?: number }) {
-  if (person.photoUri) {
+  const [failedUri, setFailedUri] = useState<string | null>(null);
+  const height = size / PASSPORT_ASPECT_RATIO;
+  if (person.photoUri && failedUri !== person.photoUri) {
     if (person.photoFraming) {
-      return <View style={{ width: size, height: size, borderRadius: 18, overflow: 'hidden', backgroundColor: C.background }}>
-        <Image source={{ uri: person.photoUri }} resizeMode="stretch" style={[{ position: 'absolute' }, photoFrameRect(person.photoFraming, size)]} />
+      return <View style={{ width: size, height, borderRadius: 8, overflow: 'hidden', backgroundColor: C.background }}>
+        <Image source={{ uri: person.photoUri }} onError={() => setFailedUri(person.photoUri!)} resizeMode="stretch" style={[{ position: 'absolute' }, photoFrameRect({ ...person.photoFraming, frameAspectRatio: PASSPORT_ASPECT_RATIO }, size)]} />
       </View>;
     }
-    return <Image source={{ uri: person.photoUri }} style={{ width: size, height: size, borderRadius: 18 }} />;
+    return <Image source={{ uri: person.photoUri }} onError={() => setFailedUri(person.photoUri!)} resizeMode="cover" style={{ width: size, height, borderRadius: 8 }} />;
   }
   return (
-    <View style={[styles.photoPlaceholder, { width: size, height: size, borderRadius: 18, backgroundColor: person.color }]}>
+    <View style={[styles.photoPlaceholder, { width: size, height, borderRadius: 8, backgroundColor: person.color }]}>
       <Text style={[styles.photoInitials, { fontSize: size * 0.28 }]}>{person.name ? initials(person.name) : '＋'}</Text>
       {!person.name && <Text style={styles.photoAddHint}>תמונה</Text>}
+      {person.photoUri && failedUri === person.photoUri && <Text style={{ color: C.muted, fontSize: 9, textAlign: 'center', marginTop: 5 }}>תמונה לא זמינה</Text>}
     </View>
   );
 }
@@ -444,6 +447,20 @@ export default function App() {
   const [taskImportance, setTaskImportance] = useState<'חשובה' | 'רגילה'>('רגילה');
 
   const savedData = useMemo<SavedAppData>(() => ({ people, guardPosts, guardTimeSlots, guardAssignments, readinessShifts, readinessFighterLabels, rosterEntries, absenceReasons, baseOptions, tasks }), [people, guardPosts, guardTimeSlots, guardAssignments, readinessShifts, readinessFighterLabels, rosterEntries, absenceReasons, baseOptions, tasks]);
+  const attemptedPhotoRecovery = React.useRef(new Set<string>());
+  React.useEffect(() => {
+    if (Platform.OS !== 'web' || !savingAllowed) return;
+    for (const person of people) {
+      const uri = person.photoUri;
+      if (!uri?.startsWith('blob:') || attemptedPhotoRecovery.current.has(uri)) continue;
+      attemptedPhotoRecovery.current.add(uri);
+      // Recover still-live URLs from earlier builds, without clearing expired
+      // references or replacing a photo the user changed during conversion.
+      prepareProfilePhoto(uri).then((persistentUri) => {
+        setPeople((current) => current.map((item) => item.photoUri === uri ? { ...item, photoUri: persistentUri } : item));
+      }).catch(() => {});
+    }
+  }, [people, savingAllowed]);
   React.useEffect(() => {
     if (!savingAllowed) return;
     try {
@@ -1487,8 +1504,10 @@ function PersonModal({ profile, people, onClose, onEdit, onSave }: {
   onSave: (person: Person) => void;
 }) {
   const [draft, setDraft] = useState<Person | null>(profile?.person ?? null);
-  const [photoEditing, setPhotoEditing] = useState<{ uri: string; framing?: PhotoFraming } | null>(null);
-  React.useEffect(() => { setDraft(profile?.person ?? null); setPhotoEditing(null); }, [profile?.person]);
+  const [photoEditing, setPhotoEditing] = useState<{ uri: string; framing?: PhotoFraming; directSave?: boolean } | null>(null);
+  const [photoError, setPhotoError] = useState('');
+  const [photoBusy, setPhotoBusy] = useState(false);
+  React.useEffect(() => { setDraft(profile?.person ?? null); setPhotoEditing(null); setPhotoError(''); }, [profile?.person]);
   if (!profile || !draft) return null;
 
   function updateDraft(changes: Partial<Person>) {
@@ -1499,7 +1518,9 @@ function PersonModal({ profile, people, onClose, onEdit, onSave }: {
     setDraft((current) => current ? { ...current, partner: { name: '', ...current.partner, ...changes } } : current);
   }
 
-  async function choosePhoto() {
+  async function choosePhoto(directSave = false) {
+    setPhotoError('');
+    setPhotoBusy(true);
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
@@ -1511,22 +1532,35 @@ function PersonModal({ profile, people, onClose, onEdit, onSave }: {
         const asset = result.assets[0];
         const source = Platform.OS === 'web' && asset.base64 ? `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}` : asset.uri;
         const uri = Platform.OS === 'web' ? await prepareProfilePhoto(source) : source;
-        setPhotoEditing({ uri, framing: normalizePhotoFraming({ aspectRatio: asset.width && asset.height ? asset.width / asset.height : 1 }) });
+        setPhotoEditing({ uri, framing: normalizePhotoFraming({ aspectRatio: asset.width && asset.height ? asset.width / asset.height : 1, frameAspectRatio: PASSPORT_ASPECT_RATIO }), directSave });
       }
     } catch {
-      Alert.alert('לא ניתן לבחור תמונה', 'נסה לבחור תמונה שוב.');
-    }
+      setPhotoError('לא ניתן לפתוח את התמונה. נסה לבחור אותה שוב מהמכשיר.');
+    } finally { setPhotoBusy(false); }
   }
 
-  async function editCurrentPhoto() {
-    if (!draft?.photoUri) return;
+  async function editCurrentPhoto(directSave = false) {
+    if (!draft?.photoUri) return choosePhoto(directSave);
+    setPhotoError('');
+    if (!draft.photoUri.startsWith('blob:')) {
+      setPhotoEditing({ uri: draft.photoUri, framing: draft.photoFraming, directSave });
+      return;
+    }
+    setPhotoBusy(true);
     try {
       const uri = Platform.OS === 'web' ? await prepareProfilePhoto(draft.photoUri) : draft.photoUri;
-      setPhotoEditing({ uri, framing: draft.photoFraming });
+      setPhotoEditing({ uri, framing: draft.photoFraming, directSave });
     } catch {
-      Alert.alert('התמונה אינה זמינה', 'יש לבחור שוב את התמונה מהמכשיר. שאר הפרטים נשמרים.');
-    }
+      setPhotoError('התמונה הישנה אינה זמינה. יש לבחור אותה שוב מהמכשיר; שאר הפרטים נשמרים.');
+    } finally { setPhotoBusy(false); }
   }
+
+  const photoEditor = photoEditing && <PhotoEditorSheet key={photoEditing.uri} uri={photoEditing.uri} initialFraming={photoEditing.framing} onReplace={() => { void choosePhoto(photoEditing.directSave); }} onClose={() => setPhotoEditing(null)} onSave={(framing) => {
+    const changes = { photoUri: photoEditing.uri, photoFraming: framing };
+    if (photoEditing.directSave) onSave({ ...profile.person, ...changes });
+    else updateDraft(changes);
+    setPhotoEditing(null);
+  }} />;
 
   if (profile.editing) {
     const duplicateName = people.some((person) => person.id !== draft.id && normalizedPersonName(person.name) === normalizedPersonName(draft.name));
@@ -1537,11 +1571,13 @@ function PersonModal({ profile, people, onClose, onEdit, onSave }: {
         <ScrollView style={styles.personSheetScroll} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
         <View style={styles.modalHeader}><Text style={styles.modalTitle}>{draft.id ? 'עריכת פרטים' : 'אדם חדש'}</Text><Pressable onPress={onClose} style={styles.closeButton}><AppIcon name="close" size={15} color={C.muted} /></Pressable></View>
         <View style={styles.photoEditorRow}>
-          <PersonPhoto person={draft} size={78} />
+          <Pressable accessibilityRole="button" accessibilityLabel="עריכת תמונת פרופיל" onPress={() => { void editCurrentPhoto(); }}><PersonPhoto person={draft} size={78} /></Pressable>
           <View style={styles.photoEditorText}>
             <Text style={styles.formLabel}>תמונת פרופיל</Text>
-            <Pressable style={styles.photoPickerButton} onPress={choosePhoto}><Text style={styles.photoPickerText}>{draft.photoUri ? 'החלפת תמונה' : 'בחירת תמונה'}</Text></Pressable>
-            {!!draft.photoUri && <Pressable accessibilityRole="button" style={styles.photoPickerButton} onPress={editCurrentPhoto}><Text style={styles.photoPickerText}>עריכת מסגרת התמונה</Text></Pressable>}
+            <Pressable accessibilityRole="button" style={styles.photoPickerButton} onPress={() => { void choosePhoto(); }}><Text style={styles.photoPickerText}>{draft.photoUri ? 'החלפת תמונה' : 'בחירת תמונה'}</Text></Pressable>
+            {!!draft.photoUri && <Pressable accessibilityRole="button" style={styles.photoPickerButton} onPress={() => { void editCurrentPhoto(); }}><Text style={styles.photoPickerText}>עריכת מסגרת התמונה</Text></Pressable>}
+            {photoBusy && <Text style={styles.formHint}>טוען תמונה…</Text>}
+            {!!photoError && <Text style={styles.peopleDeleteText}>{photoError}</Text>}
           </View>
         </View>
         <Text style={styles.formLabel}>שם מלא</Text>
@@ -1600,7 +1636,7 @@ function PersonModal({ profile, people, onClose, onEdit, onSave }: {
         <Pressable disabled={!canSave} style={[styles.primaryButton, !canSave && styles.primaryButtonDisabled]} onPress={() => onSave(draft)}><Text style={styles.primaryButtonText}>שמירת פרטים</Text></Pressable>
         <Text style={styles.sheetFootnote}>בדוק את מצב השמירה בתחתית המסך אחרי שמירת הפרטים</Text>
         </ScrollView>
-        {photoEditing && <PhotoEditorSheet uri={photoEditing.uri} initialFraming={photoEditing.framing} onClose={() => setPhotoEditing(null)} onSave={(framing) => { updateDraft({ photoUri: photoEditing.uri, photoFraming: framing }); setPhotoEditing(null); }} />}
+        {photoEditor}
       </Sheet>
     );
   }
@@ -1610,7 +1646,9 @@ function PersonModal({ profile, people, onClose, onEdit, onSave }: {
     <Sheet visible onClose={onClose}>
       <ScrollView style={styles.personSheetScroll} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
       <View style={styles.modalHeader}><Text style={styles.modalTitle}>כרטיס אישי</Text><Pressable onPress={onClose} style={styles.closeButton}><AppIcon name="close" size={15} color={C.muted} /></Pressable></View>
-      <View style={styles.profileTop}><PersonPhoto person={person} size={98} /><Text style={styles.profileName}>{person.name}</Text><Text style={styles.profileRole}>{person.role}</Text><Pill label={person.status} tone={person.status === 'במסגרת' ? 'green' : 'orange'} /></View>
+      <View style={styles.profileTop}><Pressable accessibilityRole="button" accessibilityLabel="עריכת תמונת פרופיל" onPress={() => { void editCurrentPhoto(true); }}><PersonPhoto person={person} size={98} /><Text style={styles.photoPickerText}>עריכת תמונה</Text></Pressable><Text style={styles.profileName}>{person.name}</Text><Text style={styles.profileRole}>{person.role}</Text><Pill label={person.status} tone={person.status === 'במסגרת' ? 'green' : 'orange'} /></View>
+      {photoBusy && <Text style={styles.formHint}>טוען תמונה…</Text>}
+      {!!photoError && <View><Text style={styles.peopleDeleteText}>{photoError}</Text><Pressable accessibilityRole="button" style={styles.photoPickerButton} onPress={() => { void choosePhoto(true); }}><Text style={styles.photoPickerText}>בחירת תמונה מחדש</Text></Pressable></View>}
       {!!person.statusTags.length && <View style={styles.profileStatusTags}>{person.statusTags.map((tag) => <Pill key={tag} label={tag} tone="neutral" />)}</View>}
       <View style={styles.profileDetails}>
         <DetailRow label="עיר" value={person.city || 'לא צוין'} />
@@ -1637,6 +1675,7 @@ function PersonModal({ profile, people, onClose, onEdit, onSave }: {
       <Pressable style={styles.primaryButton} onPress={onEdit}><Text style={styles.primaryButtonText}>עריכת פרטים</Text></Pressable>
       <Text style={styles.sheetFootnote}>אפשר לעדכן את התחומים דרך עריכת פרטים</Text>
       </ScrollView>
+      {photoEditor}
     </Sheet>
   );
 }
@@ -1645,10 +1684,13 @@ function DetailRow({ label, value, last = false }: { label: string; value: strin
   return <View style={[styles.detailRow, !last && styles.withTopBorder]}><Text style={styles.detailValue}>{value}</Text><Text style={styles.detailLabel}>{label}</Text></View>;
 }
 
-function PhotoEditorSheet({ uri, initialFraming, onClose, onSave }: { uri: string; initialFraming?: PhotoFraming; onClose: () => void; onSave: (framing: PhotoFraming) => void }) {
-  const { width } = useWindowDimensions();
-  const size = Math.max(140, Math.min(260, width - 88));
-  const [framing, setFraming] = useState(() => normalizePhotoFraming(initialFraming));
+function PhotoEditorSheet({ uri, initialFraming, onReplace, onClose, onSave }: { uri: string; initialFraming?: PhotoFraming; onReplace: () => void; onClose: () => void; onSave: (framing: PhotoFraming) => void }) {
+  const { width, height } = useWindowDimensions();
+  const size = Math.max(140, Math.min(240, width - 88, (height - 360) * PASSPORT_ASPECT_RATIO));
+  const frameHeight = size / PASSPORT_ASPECT_RATIO;
+  const [framing, setFraming] = useState(() => normalizePhotoFraming({ ...initialFraming, frameAspectRatio: PASSPORT_ASPECT_RATIO }));
+  const [imageReady, setImageReady] = useState(false);
+  const [imageError, setImageError] = useState(false);
   const frameRef = React.useRef(framing);
   frameRef.current = framing;
   const gestureStart = React.useRef<{ x: number; y: number; count: number; distance: number; framing: PhotoFraming } | null>(null);
@@ -1660,8 +1702,8 @@ function PhotoEditorSheet({ uri, initialFraming, onClose, onSave }: { uri: strin
   React.useEffect(() => {
     let cancelled = false;
     Image.getSize(uri, (imageWidth, imageHeight) => {
-      if (!cancelled && imageHeight > 0) apply({ ...frameRef.current, aspectRatio: imageWidth / imageHeight });
-    }, () => {});
+      if (!cancelled && imageHeight > 0) { apply({ ...frameRef.current, aspectRatio: imageWidth / imageHeight }); setImageReady(true); }
+    }, () => { if (!cancelled) setImageError(true); });
     return () => { cancelled = true; };
   }, [uri]);
   function point(event: GestureResponderEvent) {
@@ -1676,6 +1718,7 @@ function PhotoEditorSheet({ uri, initialFraming, onClose, onSave }: { uri: strin
     onMoveShouldSetPanResponder: () => true,
     onPanResponderTerminationRequest: () => false,
     onPanResponderGrant: (event) => { gestureStart.current = { ...point(event), framing: frameRef.current }; },
+    onPanResponderStart: (event) => { gestureStart.current = { ...point(event), framing: frameRef.current }; },
     onPanResponderMove: (event) => {
       const current = point(event);
       const start = gestureStart.current;
@@ -1683,19 +1726,22 @@ function PhotoEditorSheet({ uri, initialFraming, onClose, onSave }: { uri: strin
       apply({ ...start.framing,
         zoom: start.distance > 0 && current.distance > 0 ? start.framing.zoom * current.distance / start.distance : start.framing.zoom,
         offsetX: start.framing.offsetX + (current.x - start.x) / size,
-        offsetY: start.framing.offsetY + (current.y - start.y) / size,
+        offsetY: start.framing.offsetY + (current.y - start.y) / frameHeight,
       });
     },
     onPanResponderRelease: () => { gestureStart.current = null; },
     onPanResponderTerminate: () => { gestureStart.current = null; },
-  }), [size]);
+  }), [size, frameHeight]);
   const previewPerson: Person = { id: '', name: '', city: '', role: '', status: '', statusTags: [], color: C.background, photoUri: uri, photoFraming: framing };
   return <Sheet visible onClose={onClose}>
+    <ScrollView style={styles.personSheetScroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
     <View style={styles.modalHeader}><Text style={styles.modalTitle}>התאמת תמונה</Text><Pressable accessibilityRole="button" accessibilityLabel="ביטול עריכת תמונה" style={styles.closeButton} onPress={onClose}><AppIcon name="close" size={16} /></Pressable></View>
     <Text style={styles.sheetIntro}>גרור להזזת התמונה. אפשר להגדיל ולהקטין בשתי אצבעות או בכפתורים.</Text>
-    <View nativeID="photo-frame-editor" {...responder.panHandlers} style={{ width: size, height: size, alignSelf: 'center', borderRadius: 18, overflow: 'hidden' }}>
+    <Text style={styles.formLabel}>מסגרת פספורט · יחס 35×45</Text>
+    {!imageReady && <Text style={styles.peopleDeleteText}>{imageError ? 'לא ניתן לפתוח את התמונה. בחר אותה שוב מהמכשיר.' : 'טוען תמונה…'}</Text>}
+    <View nativeID="photo-frame-editor" {...responder.panHandlers} style={{ width: size, height: frameHeight, alignSelf: 'center', borderRadius: 8, overflow: 'hidden' }}>
       <View pointerEvents="none"><PersonPhoto person={previewPerson} size={size} /></View>
-      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderWidth: 1, borderRadius: 18, borderColor: C.violetLight }]} />
+      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderWidth: 1, borderRadius: 8, borderColor: C.violetLight }]} />
     </View>
     <View style={styles.photoZoomControls}>
       <Pressable accessibilityRole="button" accessibilityLabel="הגדלת התמונה" style={styles.zoomButton} onPress={() => apply({ ...frameRef.current, zoom: frameRef.current.zoom + 0.1 })}><Text style={styles.zoomButtonText}>＋</Text></Pressable>
@@ -1703,7 +1749,9 @@ function PhotoEditorSheet({ uri, initialFraming, onClose, onSave }: { uri: strin
       <Pressable accessibilityRole="button" accessibilityLabel="הקטנת התמונה" disabled={framing.zoom <= 1} style={styles.zoomButton} onPress={() => apply({ ...frameRef.current, zoom: frameRef.current.zoom - 0.1 })}><Text style={styles.zoomButtonText}>−</Text></Pressable>
     </View>
     <Pressable accessibilityRole="button" style={styles.clearAssigneeButton} onPress={() => apply({ ...frameRef.current, zoom: 1, offsetX: 0, offsetY: 0 })}><Text style={styles.photoPickerText}>איפוס המסגרת</Text></Pressable>
-    <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => onSave(frameRef.current)}><Text style={styles.primaryButtonText}>אישור התמונה</Text></Pressable>
+    <Pressable accessibilityRole="button" disabled={!imageReady} style={[styles.primaryButton, !imageReady && styles.primaryButtonDisabled]} onPress={() => onSave(frameRef.current)}><Text style={styles.primaryButtonText}>אישור התמונה</Text></Pressable>
+    <Pressable accessibilityRole="button" style={styles.photoPickerButton} onPress={onReplace}><Text style={styles.photoPickerText}>בחירת תמונה אחרת</Text></Pressable>
+    </ScrollView>
   </Sheet>;
 }
 
@@ -2375,8 +2423,8 @@ const styles = StyleSheet.create({
   photoEditorText: { flex: 1, alignItems: 'flex-end', marginRight: 14 },
   photoZoomControls: { flexDirection: 'row-reverse', justifyContent: 'center', alignItems: 'center', gap: 18, marginTop: 16 },
   photoZoomValue: { color: C.ink, fontSize: 16, minWidth: 55, textAlign: 'center' },
-  photoPickerButton: { backgroundColor: C.purpleSoft, borderWidth: 1, borderColor: C.line, borderRadius: radius.control, paddingHorizontal: 13, paddingVertical: 9, marginTop: 3 },
-  photoPickerText: { color: C.purple, fontSize: 11, fontWeight: '800' },
+  photoPickerButton: { minHeight: 44, justifyContent: 'center', backgroundColor: C.purpleSoft, borderWidth: 1, borderColor: C.line, borderRadius: radius.control, paddingHorizontal: 13, paddingVertical: 9, marginTop: 3 },
+  photoPickerText: { color: C.violetLight, fontSize: 13, fontWeight: '800', textAlign: 'center' },
   formHint: { color: C.muted, fontSize: 10, textAlign: 'right', marginTop: -9, marginBottom: 12 },
   formLabel: { color: C.ink, fontSize: 12, fontWeight: '700', textAlign: 'right', marginBottom: 7, marginTop: 4 },
   formInput: { minHeight: 48, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderRadius: radius.control, paddingHorizontal: 13, color: C.ink, marginBottom: 14 },

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizePhotoFraming, photoFrameRect, isPhotoFraming } from '../photoFraming.ts';
+import { normalizePhotoFraming, photoFrameRect, isPhotoFraming, PASSPORT_ASPECT_RATIO } from '../photoFraming.ts';
 
 test('framing preserves image proportions and fills the square at every supported zoom', () => {
   for (const aspectRatio of [0.5, 1, 2, 3]) {
@@ -23,4 +23,17 @@ test('invalid framing is rejected and zoom is constrained', () => {
   assert.equal(isPhotoFraming({zoom:2,offsetX:100,offsetY:0,aspectRatio:1}),false);
   assert.equal(normalizePhotoFraming({zoom:0}).zoom,1);
   assert.equal(normalizePhotoFraming({zoom:20}).zoom,4);
+});
+
+test('passport framing covers a 35:45 portrait at every image orientation', () => {
+  for (const aspectRatio of [0.5, 1, 2, 3]) {
+    const framing = normalizePhotoFraming({aspectRatio,frameAspectRatio:PASSPORT_ASPECT_RATIO,zoom:1.4,offsetX:100,offsetY:-100});
+    const rect = photoFrameRect(framing, 240);
+    assert(Math.abs(rect.width / rect.height - aspectRatio) < 1e-8);
+    assert(rect.left <= 1e-8 && rect.top <= 1e-8);
+    assert(rect.left + rect.width >= 240 - 1e-8);
+    assert(rect.top + rect.height >= 240 / PASSPORT_ASPECT_RATIO - 1e-8);
+    assert(isPhotoFraming(framing));
+  }
+  assert(isPhotoFraming({zoom:1.5,offsetX:0.1,offsetY:0.1,aspectRatio:1}),'legacy square framings remain valid in existing backups');
 });

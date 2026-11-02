@@ -1861,29 +1861,108 @@ function WheelColumn({ label, values, selectedValue, onChange }: {
   onChange: (value: string) => void;
 }) {
   const scrollRef = React.useRef<ScrollView>(null);
+  const wheelId = `wheel-${React.useId().replace(/[^a-zA-Z0-9]/g, '')}`;
+  const latest = React.useRef({ values, selectedValue, onChange });
+  latest.current = { values, selectedValue, onChange };
+  const offset = React.useRef(0);
+  const dragging = React.useRef(false);
+  const interacted = React.useRef(false);
+  const lastTick = React.useRef(0);
+  const settleTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialIndex = Math.max(0, values.indexOf(selectedValue));
+  const activeIndex = React.useRef(initialIndex);
+  const clickTarget = React.useRef<number | null>(null);
+
+  function tick() {
+    if (!interacted.current || Date.now() - lastTick.current < 45) return;
+    lastTick.current = Date.now();
+    // Safari exposes no Vibration API. Use a short tick only where supported.
+    if (Platform.OS === 'web' && typeof navigator.vibrate === 'function') {
+      try { navigator.vibrate(6); } catch { /* Optional hardware feedback. */ }
+    }
+  }
+
+  function selectIndex(index: number) {
+    const current = latest.current;
+    const safeIndex = Math.max(0, Math.min(current.values.length - 1, index));
+    if (activeIndex.current !== safeIndex) tick();
+    activeIndex.current = safeIndex;
+    if (current.values[safeIndex] !== current.selectedValue) current.onChange(current.values[safeIndex]);
+    return safeIndex;
+  }
+
+  function settle() {
+    if (dragging.current) return;
+    const index = selectIndex(clickTarget.current ?? Math.round(offset.current / 42));
+    const destination = index * 42;
+    if (Math.abs(offset.current - destination) > 0.5) {
+      scrollRef.current?.scrollTo({ y: destination, animated: true });
+    } else clickTarget.current = null;
+  }
+
+  function scheduleSettle() {
+    if (settleTimer.current) clearTimeout(settleTimer.current);
+    settleTimer.current = setTimeout(settle, 160);
+  }
+
   React.useEffect(() => {
+    activeIndex.current = initialIndex;
+    clickTarget.current = null;
+    offset.current = initialIndex * 42;
     scrollRef.current?.scrollTo({ y: initialIndex * 42, animated: false });
+    if (Platform.OS === 'web') {
+      const element = document.getElementById(wheelId);
+      if (element) {
+        element.style.scrollSnapType = 'y mandatory';
+        const content = element.firstElementChild;
+        for (const item of Array.from(content?.children ?? [])) {
+          if (item instanceof HTMLElement) {
+            item.style.scrollSnapAlign = 'center';
+            item.style.transition = 'opacity 100ms ease, transform 100ms ease';
+          }
+        }
+      }
+    }
   }, [values.length]);
+  React.useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const element = document.getElementById(wheelId);
+    const markInteraction = () => { interacted.current = true; clickTarget.current = null; };
+    element?.addEventListener('wheel', markInteraction, { passive: true });
+    return () => element?.removeEventListener('wheel', markInteraction);
+  }, []);
+  React.useEffect(() => () => { if (settleTimer.current) clearTimeout(settleTimer.current); }, []);
   return (
     <View style={styles.wheelColumn}>
       <Text style={styles.wheelLabel}>{label}</Text>
       <ScrollView
         ref={scrollRef}
+        nativeID={wheelId}
         accessibilityLabel={`גלגלת ${label}`}
         style={styles.wheelScroll}
         contentContainerStyle={styles.wheelContent}
         showsVerticalScrollIndicator={false}
         snapToInterval={42}
         decelerationRate="fast"
+        onTouchStart={() => { interacted.current = true; dragging.current = true; clickTarget.current = null; if (settleTimer.current) clearTimeout(settleTimer.current); }}
+        onTouchEnd={() => { dragging.current = false; scheduleSettle(); }}
+        onTouchCancel={() => { dragging.current = false; scheduleSettle(); }}
+        onScrollBeginDrag={() => { interacted.current = true; dragging.current = true; clickTarget.current = null; }}
+        onScrollEndDrag={() => { dragging.current = false; scheduleSettle(); }}
+        onMomentumScrollEnd={() => { dragging.current = false; settle(); }}
         onScroll={(event) => {
-          const index = Math.max(0, Math.min(values.length - 1, Math.round(event.nativeEvent.contentOffset.y / 42)));
-          if (values[index] !== selectedValue) onChange(values[index]);
+          offset.current = event.nativeEvent.contentOffset.y;
+          if (clickTarget.current === null) selectIndex(Math.round(offset.current / 42));
+          else if (Math.abs(offset.current - clickTarget.current * 42) <= 0.5) {
+            selectIndex(clickTarget.current);
+            clickTarget.current = null;
+          }
+          scheduleSettle();
         }}
-        scrollEventThrottle={100}
+        scrollEventThrottle={16}
       >
         {values.map((value) => (
-          <Pressable key={value} accessibilityRole="button" accessibilityLabel={`${label} ${value}`} accessibilityState={{ selected: selectedValue === value }} style={styles.wheelItem} onPress={() => { onChange(value); scrollRef.current?.scrollTo({ y: values.indexOf(value) * 42, animated: false }); }}><Text style={[styles.wheelItemText, selectedValue === value && styles.wheelItemTextActive]}>{value}</Text></Pressable>
+          <Pressable key={value} accessibilityRole="button" accessibilityLabel={`${label} ${value}`} accessibilityState={{ selected: selectedValue === value }} {...(Platform.OS === 'web' ? { 'aria-pressed': selectedValue === value } : {})} style={[styles.wheelItem, { opacity: selectedValue === value ? 1 : 0.6, transform: [{ scale: selectedValue === value ? 1 : 0.95 }] }]} onPress={() => { interacted.current = true; dragging.current = false; const index = selectIndex(values.indexOf(value)); clickTarget.current = index; scrollRef.current?.scrollTo({ y: index * 42, animated: true }); scheduleSettle(); }}><Text style={[styles.wheelItemText, selectedValue === value && styles.wheelItemTextActive]}>{value}</Text></Pressable>
         ))}
       </ScrollView>
     </View>

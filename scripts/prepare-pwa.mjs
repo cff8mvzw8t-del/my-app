@@ -23,7 +23,7 @@ export async function preparePwa(dist, base = '/') {
   html = html.replace('</head>', `
     <style id="mobile-shell">
       html, body { margin: 0; background: #000; overflow: hidden; overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
-      #root { position: absolute; inset: 0; width: 100%; height: auto; min-height: 0; overflow: hidden; direction: ltr; background: #000; }
+      #root { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; overflow: hidden; direction: ltr; background: #000; }
     </style>
     <link rel="manifest" href="${base}manifest.webmanifest">
     <link rel="apple-touch-icon" href="${base}icons/apple-touch-icon.png">
@@ -42,7 +42,7 @@ export async function preparePwa(dist, base = '/') {
   // Precache only the exported app, never personal records, backups, or development previews.
   const files = (await walk(dist)).filter(path => {
     const name = relative(dist, path).replaceAll('\\', '/');
-    return !['sw.js', '.nojekyll', 'metadata.json', 'iphone-preview.html'].includes(name) && !name.endsWith('.map');
+    return !['sw.js', '.nojekyll', 'metadata.json', 'iphone-preview.html', 'refresh.html'].includes(name) && !name.endsWith('.map');
   }).sort();
   const hash = createHash('sha256');
   for (const path of files) { hash.update(relative(dist, path)); hash.update(await readFile(path)); }

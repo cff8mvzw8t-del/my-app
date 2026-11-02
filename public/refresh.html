@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <title>פתיחת האפליקציה</title>
+  <style>
+    html { background:#000; color:#f5f3f7; font-family:David,serif; }
+    body { margin:0; min-height:100vh; display:grid; place-items:center; }
+    main { max-width:360px; padding:32px; text-align:center; }
+    h1 { font-size:24px; } p { color:#bdb4ca; line-height:1.6; }
+    button { background:#7135a6; color:white; border:0; border-radius:10px; padding:14px 24px; font:inherit; }
+  </style>
+</head>
+<body>
+  <main><h1 id="status">פותח את הגרסה המעודכנת…</h1><p>הנתונים שהזנת נשארים במכשיר.</p><button id="retry" hidden>נסה שוב</button></main>
+  <script>
+    // Only replace this app's public code cache. Never clear localStorage,
+    // IndexedDB, cookies, or unrelated workers/caches on the same origin.
+    const base = new URL('.', location.href);
+    async function refreshApp() {
+      const retry = document.getElementById('retry');
+      retry.hidden = true;
+      try {
+        const response = await fetch(new URL('refresh.html?online=' + Date.now(), base), { cache: 'no-store' });
+        if (!response.ok) throw new Error('Connection unavailable');
+        if ('serviceWorker' in navigator) {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          for (const registration of registrations) {
+            if (registration.scope === base.href) await registration.unregister();
+          }
+        }
+        if ('caches' in window) {
+          const prefix = 'personal-control-shell:' + base.pathname + ':';
+          for (const name of await caches.keys()) {
+            if (name.startsWith(prefix)) await caches.delete(name);
+          }
+        }
+        location.replace(new URL('?refreshed=' + Date.now(), base));
+      } catch (error) {
+        document.getElementById('status').textContent = 'יש להתחבר לאינטרנט ולנסות שוב';
+        retry.hidden = false;
+      }
+    }
+    document.getElementById('retry').onclick = refreshApp;
+    refreshApp();
+  </script>
+</body>
+</html>

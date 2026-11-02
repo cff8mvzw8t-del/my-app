@@ -19,10 +19,12 @@ test('production export prepares a scoped manifest and complete offline shell', 
     await writeFile(join(dir, '_expo/app.js'), 'app');
     await writeFile(join(dir, 'index.html'), '<html lang="en"><head></head><body><script src="/my-app/_expo/app.js"></script></body></html>');
     await writeFile(join(dir, 'iphone-preview.html'), 'preview');
+    await writeFile(join(dir, 'refresh.html'), 'recovery');
     const result = await preparePwa(dir, '/my-app/');
     assert(result.urls.includes('/my-app/index.html'));
     assert(result.urls.includes('/my-app/_expo/app.js'));
     assert(!result.urls.includes('/my-app/iphone-preview.html'));
+    assert(!result.urls.includes('/my-app/refresh.html'));
     const manifest = JSON.parse(await readFile(join(dir, 'manifest.webmanifest'), 'utf8'));
     assert.equal(manifest.scope, '/my-app/');
     assert.equal(manifest.start_url, '/my-app/');

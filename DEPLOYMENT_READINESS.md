@@ -2,6 +2,12 @@
 
 ## Implementation checkpoint
 
+### Update reliability follow-up
+
+The owner reported a black screen specifically after accepting an update. The installer now downloads each public asset with a build-version query and `cache: no-store`, stores canonical cache keys, validates that cached HTML references only assets in the same build, and abandons an incomplete/mismatched download without deleting the previous version. Accepted updates use a fresh navigation instead of reloading the old iOS snapshot. Initial HTML shows a loading message and offers the existing data-preserving recovery page if startup exceeds 12 seconds.
+
+Validation: TypeScript, offline worker tests, and web export passed. An isolated WebKit browser exercised the actual update button between two versions while the server deliberately returned old HTML for unversioned requests and removed the old bundle. The new version loaded, record data survived, offline reopening succeeded, and no page errors occurred. This is not a test on the owner's physical iPhone. No record schema/storage changes were made.
+
 ### Published and verified
 
 Live URL: **https://cff8mvzw8t-del.github.io/my-app/**. Pages was enabled through the existing Git credential helper and the failed job was retried using the authenticated API. Run `41514273784`, attempt 2, succeeded. The published page returns HTTP 200.

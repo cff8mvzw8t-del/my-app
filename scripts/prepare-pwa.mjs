@@ -33,6 +33,23 @@ export async function preparePwa(dist, base = '/') {
     <script src="${base}pwa-register.js" defer></script>
   </head>`);
   html = html.replace('width=device-width, initial-scale=1, shrink-to-fit=no', 'width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover');
+  html = html.replace('<div id="root"></div>', `<div id="root"><div id="app-startup" dir="rtl" style="margin:auto;padding:32px;text-align:center;color:#F5F3F7;font-family:David,serif"><p>פותח את האפליקציה…</p></div></div>
+    <script>
+      setTimeout(function () {
+        if (document.getElementById('app-bottom-navigation')) return;
+        var help = document.createElement('div');
+        help.dir = 'rtl';
+        help.style.cssText = 'position:fixed;inset:0;z-index:100000;background:#000;color:#F5F3F7;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;text-align:center;font-family:David,serif';
+        var message = document.createElement('p');
+        message.textContent = 'הטעינה מתעכבת. אפשר לרענן את קובצי האפליקציה בלי למחוק את הנתונים.';
+        var link = document.createElement('a');
+        link.textContent = 'רענון האפליקציה';
+        link.href = '${base}refresh.html';
+        link.style.cssText = 'color:#fff;background:#7135A6;padding:14px 24px;border-radius:10px;text-decoration:none';
+        help.appendChild(message); help.appendChild(link); document.body.appendChild(help);
+        var watch = setInterval(function () { if (document.getElementById('app-bottom-navigation')) { help.remove(); clearInterval(watch); } }, 500);
+      }, 12000);
+    </script>`);
   await writeFile(htmlPath, html);
   await writeFile(join(dist, '.nojekyll'), '');
   await writeFile(join(dist, 'manifest.webmanifest'), JSON.stringify({

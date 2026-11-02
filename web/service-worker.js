@@ -5,8 +5,30 @@ const CACHE = PREFIX + CONFIG.version;
 const INDEX = CONFIG.base + 'index.html';
 
 self.addEventListener('install', event => {
-  // A failed download leaves the previous complete version active.
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(CONFIG.urls)));
+  event.waitUntil((async () => {
+    // Unversioned HTML and registration scripts must not come from a previous
+    // HTTP cache/CDN response while hashed bundles come from the new build.
+    const cache = await caches.open(CACHE);
+    try {
+      await Promise.all(CONFIG.urls.map(async path => {
+        const url = new URL(path, self.location.origin);
+        url.searchParams.set('__build', CONFIG.version);
+        const response = await fetch(url.href, { cache: 'no-store' });
+        if (!response.ok) throw new Error('Incomplete application download');
+        await cache.put(path, response);
+      }));
+      const html = await (await cache.match(INDEX)).text();
+      for (const match of html.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)) {
+        const script = new URL(match[1], self.location.origin + INDEX);
+        if (script.origin !== self.location.origin || !CONFIG.urls.includes(script.pathname)) {
+          throw new Error('Application HTML and assets do not match');
+        }
+      }
+    } catch (error) {
+      await caches.delete(CACHE);
+      throw error;
+    }
+  })());
 });
 
 self.addEventListener('activate', event => {

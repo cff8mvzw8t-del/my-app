@@ -17,6 +17,7 @@ test('production export prepares a scoped manifest and complete offline shell', 
   try {
     await mkdir(join(dir, '_expo'), { recursive: true });
     await writeFile(join(dir, '_expo/app.js'), 'app');
+    await writeFile(join(dir, 'pwa-register.js'), 'register');
     await writeFile(join(dir, 'index.html'), '<html lang="en"><head></head><body><script src="/my-app/_expo/app.js"></script></body></html>');
     await writeFile(join(dir, 'iphone-preview.html'), 'preview');
     await writeFile(join(dir, 'refresh.html'), 'recovery');
@@ -39,6 +40,8 @@ test('production export prepares a scoped manifest and complete offline shell', 
 
     const handlers = {};
     const calls = [];
+    const cached = new Map();
+    let wrongHtml = false;
     let windows = [{ url: 'https://example.test/my-app/' }];
     const worker = {
       location: { origin: 'https://example.test' },
@@ -49,22 +52,31 @@ test('production export prepares a scoped manifest and complete offline shell', 
     vm.runInNewContext(await readFile(join(dir, 'sw.js'), 'utf8'), {
       self: worker, URL,
       caches: {
-        open: async () => ({ addAll: async urls => calls.push([...urls]), match: async key => `cached:${key}` }),
+        open: async () => ({ put: async (key, response) => cached.set(key, response), match: async key => cached.get(key) }),
         keys: async () => ['unrelated-cache', 'personal-control-shell:/my-app/:old'],
         delete: async key => calls.push(`deleted:${key}`),
       },
-      fetch: () => { throw new Error('Network unavailable'); },
+      fetch: async (url, options) => {
+        const request = new URL(url);
+        assert.equal(options.cache, 'no-store');
+        assert.equal(request.searchParams.get('__build'), result.version);
+        calls.push(request.pathname);
+        const content = request.pathname.endsWith('index.html') && wrongHtml
+          ? '<script src="/my-app/old-missing-bundle.js"></script>'
+          : await readFile(join(dir, request.pathname.slice('/my-app/'.length)), 'utf8');
+        return { ok: true, text: async () => content };
+      },
     });
     let pending;
     handlers.install({ waitUntil: promise => { pending = promise; } }); await pending;
-    assert(calls[0].includes('/my-app/_expo/app.js'));
+    assert(calls.includes('/my-app/_expo/app.js'));
     handlers.activate({ waitUntil: promise => { pending = promise; } }); await pending;
     assert(calls.includes('deleted:personal-control-shell:/my-app/:old'));
     assert(!calls.includes('deleted:unrelated-cache'));
     handlers.fetch({ request: { method: 'GET', mode: 'navigate', url: 'https://example.test/my-app/?refresh=1' }, respondWith: promise => { pending = promise; } });
-    assert.equal(await pending, 'cached:/my-app/index.html');
+    assert.equal(await (await pending).text(), html);
     handlers.fetch({ request: { method: 'GET', mode: 'cors', url: 'https://example.test/my-app/_expo/app.js' }, respondWith: promise => { pending = promise; } });
-    assert.equal(await pending, 'cached:/my-app/_expo/app.js');
+    assert.equal(await (await pending).text(), 'app');
     let intercepted = false;
     handlers.fetch({ request: { method: 'GET', mode: 'cors', url: 'https://example.test/other-app/' }, respondWith: () => { intercepted = true; } });
     assert.equal(intercepted, false);
@@ -75,5 +87,10 @@ test('production export prepares a scoped manifest and complete offline shell', 
     windows = windows.slice(0,1);
     handlers.message({ data: { type: 'ACTIVATE_UPDATE' }, waitUntil: promise => { pending = promise; } }); await pending;
     assert(calls.includes('activate'));
+    calls.length = 0;
+    wrongHtml = true;
+    handlers.install({ waitUntil: promise => { pending = promise; } });
+    await assert.rejects(pending, /HTML and assets do not match/);
+    assert(!calls.includes('deleted:personal-control-shell:/my-app/:old'));
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

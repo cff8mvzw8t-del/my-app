@@ -31,7 +31,13 @@
     document.body.append(banner);
   }
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (requestedUpdate) location.reload();
+    if (requestedUpdate) {
+      requestedUpdate = false;
+      // A fresh navigation also avoids restoring an iOS snapshot of the old UI.
+      const destination = new URL(location.href);
+      destination.searchParams.set('updated', Date.now().toString());
+      location.replace(destination.href);
+    }
   });
   navigator.serviceWorker.addEventListener('message', event => {
     if (event.data?.type === 'UPDATE_BLOCKED') {

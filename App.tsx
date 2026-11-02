@@ -447,7 +447,15 @@ export default function App() {
     const original = viewport?.content;
     if (viewport && !viewport.content.includes('viewport-fit')) viewport.content += ', viewport-fit=cover';
     const safeAreaStyle = document.createElement('style');
-    safeAreaStyle.textContent = '@supports (height: 100dvh) { #root { height: 100dvh; min-height: 0; } } #app-safe-area { padding-bottom: 0; } #app-bottom-navigation { direction: ltr; padding-bottom: max(18px, env(safe-area-inset-bottom, 0px)); }';
+    // Rows already use row-reverse for Hebrew. Inheriting RTL from the HTML
+    // element would reverse them a second time and move flex-end text left.
+    safeAreaStyle.textContent = `
+      html, body { background: #000; margin: 0; overflow: hidden; overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
+      #root { position: fixed; inset: 0; width: 100%; height: 100%; min-height: 0; overflow: hidden; direction: ltr; background: #000; }
+      @supports (height: 100dvh) { #root { height: 100dvh; } }
+      #app-safe-area { min-height: 0; padding-bottom: 0 !important; }
+      #app-bottom-navigation { direction: ltr; padding-bottom: max(18px, env(safe-area-inset-bottom, 0px)); }
+    `;
     document.head.appendChild(safeAreaStyle);
     return () => {
       safeAreaStyle.remove();
@@ -1798,8 +1806,8 @@ function RosterSettingsModal({ visible, reasons, bases, onClose, onSave }: {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: C.background },
-  appFrame: { flex: 1, width: '100%', maxWidth: 560, alignSelf: 'center', backgroundColor: C.background },
-  screenTransition: { flex: 1 },
+  appFrame: { flex: 1, minHeight: 0, width: '100%', maxWidth: 560, alignSelf: 'center', backgroundColor: C.background },
+  screenTransition: { flex: 1, minHeight: 0 },
   scrollContent: { paddingHorizontal: spacing.xl, paddingTop: spacing.md, paddingBottom: spacing.xxl },
   homeScrollContent: { flexGrow: 1, justifyContent: 'space-between', paddingBottom: spacing.md },
   homeHero: { position: 'relative', overflow: 'hidden', minHeight: 165, marginHorizontal: -spacing.xl, paddingHorizontal: spacing.xl, marginBottom: spacing.md, backgroundColor: C.background },

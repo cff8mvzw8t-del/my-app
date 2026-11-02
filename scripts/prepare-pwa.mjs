@@ -21,6 +21,11 @@ export async function preparePwa(dist, base = '/') {
   if (base !== '/' && !html.includes(`src="${base}_expo/`)) throw new Error('Expo export does not match Pages base path');
   html = html.replace('<html lang="en">', '<html lang="he" dir="rtl">');
   html = html.replace('</head>', `
+    <style id="mobile-shell">
+      html, body { margin: 0; background: #000; overflow: hidden; overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
+      #root { position: fixed; inset: 0; width: 100%; height: 100%; min-height: 0; overflow: hidden; direction: ltr; background: #000; }
+      @supports (height: 100dvh) { #root { height: 100dvh; } }
+    </style>
     <link rel="manifest" href="${base}manifest.webmanifest">
     <link rel="apple-touch-icon" href="${base}icons/apple-touch-icon.png">
     <meta name="apple-mobile-web-app-capable" content="yes">

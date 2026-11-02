@@ -24,6 +24,8 @@ export async function preparePwa(dist, base = '/') {
     <style id="mobile-shell">
       html, body { margin: 0; background: #0D080C; overflow: hidden; overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
       body { direction: ltr; }
+      input, textarea { direction: rtl !important; text-align: right !important; caret-color: #F5F3F7; font-size: 16px !important; }
+      #root { touch-action: pan-x pan-y; }
       #root { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; overflow: hidden; direction: ltr; background: #000; }
       @media (display-mode: standalone) { html, body, #root { height: 100vh; } }
     </style>
@@ -33,7 +35,7 @@ export async function preparePwa(dist, base = '/') {
     <meta name="apple-mobile-web-app-title" content="המסגרת שלי">
     <script src="${base}pwa-register.js" defer></script>
   </head>`);
-  html = html.replace('width=device-width, initial-scale=1, shrink-to-fit=no', 'width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover');
+  html = html.replace('width=device-width, initial-scale=1, shrink-to-fit=no', 'width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover, maximum-scale=1, user-scalable=no');
   html = html.replace('<div id="root"></div>', `<div id="root"><div id="app-startup" dir="rtl" style="margin:auto;padding:32px;text-align:center;color:#F5F3F7;font-family:David,serif"><p>פותח את האפליקציה…</p></div></div>
     <script>
       setTimeout(function () {

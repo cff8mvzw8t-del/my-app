@@ -16,6 +16,7 @@ import {
   Text as NativeText,
   TextInput as NativeTextInput,
   View,
+  useWindowDimensions,
   type GestureResponderEvent,
 } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
@@ -25,7 +26,9 @@ import * as ImagePicker from 'expo-image-picker';
 import { colors as C, radius, spacing } from './theme';
 import { createBackup, loadDeviceData, parseBackup, saveDeviceData, type SavedAppData } from './deviceStorage';
 import { personGroups, normalizedPersonName, getReadinessCandidates, assignReadinessPerson, reconcileReadinessPeople } from './peopleAndReadiness';
-import { normalizePersonalDate, displayPersonalDate, isValidPastDate, relationshipDuration } from './personalDates';
+import { normalizePersonalDate, displayPersonalDate, isValidPastDate, relationshipDuration, calendarKey, clampCalendarParts, type CalendarParts } from './personalDates';
+import { normalizePhotoFraming, photoFrameRect, type PhotoFraming } from './photoFraming';
+import { prepareProfilePhoto } from './profilePhotoUri';
 
 type DomainTab = 'medical' | 'welfare' | 'fitness' | 'education' | 'readiness';
 type Tab = 'home' | 'people' | 'guards' | 'roster' | 'tasks' | DomainTab;
@@ -37,6 +40,7 @@ export type Person = {
   status: string;
   statusTags: string[];
   photoUri?: string;
+  photoFraming?: PhotoFraming;
   color: string;
   statusDetails?: Partial<Record<PersonStatusField, string>>;
   group?: 'lone' | 'married' | 'other';
@@ -254,6 +258,11 @@ function Avatar({ person, size = 48 }: { person: Person; size?: number }) {
 
 function PersonPhoto({ person, size = 82 }: { person: Person; size?: number }) {
   if (person.photoUri) {
+    if (person.photoFraming) {
+      return <View style={{ width: size, height: size, borderRadius: 18, overflow: 'hidden', backgroundColor: C.background }}>
+        <Image source={{ uri: person.photoUri }} resizeMode="stretch" style={[{ position: 'absolute' }, photoFrameRect(person.photoFraming, size)]} />
+      </View>;
+    }
     return <Image source={{ uri: person.photoUri }} style={{ width: size, height: size, borderRadius: 18 }} />;
   }
   return (
@@ -297,7 +306,8 @@ function Text({ style, ...props }: React.ComponentProps<typeof NativeText>) {
 
 function TextInput({ style, ...props }: React.ComponentProps<typeof NativeTextInput>) {
   const fontsLoaded = React.useContext(DavidFontLoadedContext);
-  return <NativeTextInput {...props} style={[{ textAlign: 'right', writingDirection: 'rtl' }, style, { fontFamily: fontsLoaded ? getDavidFontFamily(style) : 'David' }]} />;
+  const webProps = Platform.OS === 'web' ? { dir: 'rtl' as const, lang: 'he' } : {};
+  return <NativeTextInput {...props} {...webProps} style={[{ textAlign: 'right', writingDirection: 'rtl' }, style, { fontFamily: fontsLoaded ? getDavidFontFamily(style) : 'David' }]} />;
 }
 
 function AppIcon({ name, size = 20, color = C.ink, filled = false }: { name: IconName; size?: number; color?: string; filled?: boolean }) {
@@ -449,6 +459,14 @@ export default function App() {
     const viewport = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
     const original = viewport?.content;
     if (viewport && !viewport.content.includes('viewport-fit')) viewport.content += ', viewport-fit=cover';
+    if (viewport && !viewport.content.includes('maximum-scale')) viewport.content += ', maximum-scale=1, user-scalable=no';
+    const preventPagePinch = (event: TouchEvent) => { if (event.touches.length > 1) event.preventDefault(); };
+    const preventPageGesture = (event: Event) => event.preventDefault();
+    // Cancel only browser zoom; React Native's local gesture responders still
+    // receive the touch events for the people grid and photo editor.
+    document.addEventListener('touchmove', preventPagePinch, { passive: false });
+    document.addEventListener('gesturestart', preventPageGesture, { passive: false });
+    document.addEventListener('gesturechange', preventPageGesture, { passive: false });
     const safeAreaStyle = document.createElement('style');
     // Rows already use row-reverse for Hebrew. Inheriting RTL from the HTML
     // element would reverse them a second time and move flex-end text left.
@@ -457,6 +475,10 @@ export default function App() {
          the last navigation gradient stop there; the app itself stays black. */
       html, body { background: #0D080C; margin: 0; overflow: hidden; overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
       body { direction: ltr; }
+      input, textarea { direction: rtl !important; text-align: right !important; caret-color: #F5F3F7; font-size: 16px !important; }
+      #root { touch-action: pan-x pan-y; }
+      #photo-frame-editor { touch-action: none; user-select: none; cursor: grab; }
+      #photo-frame-editor img { pointer-events: none; -webkit-user-drag: none; }
       #root { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; overflow: hidden; direction: ltr; background: #000; }
       #app-safe-area { min-height: 0; padding-bottom: 0 !important; }
       #app-bottom-navigation { direction: ltr; padding-bottom: max(18px, env(safe-area-inset-bottom, 0px)); }
@@ -474,6 +496,9 @@ export default function App() {
     document.head.appendChild(safeAreaStyle);
     return () => {
       safeAreaStyle.remove();
+      document.removeEventListener('touchmove', preventPagePinch);
+      document.removeEventListener('gesturestart', preventPageGesture);
+      document.removeEventListener('gesturechange', preventPageGesture);
       if (viewport && original !== undefined) viewport.content = original;
     };
   }, []);
@@ -829,7 +854,7 @@ export default function App() {
   function saveTask() {
     const title = taskTitle.trim();
     if (!title) return;
-    setTasks((current) => [{ id: `t${Date.now()}`, title, urgency: taskUrgency, importance: taskImportance, due: taskDue.trim() || 'היום', done: false }, ...current]);
+    setTasks((current) => [{ id: `t${Date.now()}`, title, urgency: taskUrgency, importance: taskImportance, due: taskDue.trim(), done: false }, ...current]);
     setTaskTitle('');
     setTaskDue('היום');
     setTaskUrgency('רגילה');
@@ -989,7 +1014,7 @@ export default function App() {
                   <Pressable disabled={!selectedPeopleIds.length} style={[styles.peopleDeleteButton, !selectedPeopleIds.length && styles.primaryButtonDisabled]} onPress={() => setDeletePeopleOpen(true)} accessibilityRole="button"><Text style={styles.peopleDeleteText}>מחיקת המסומנים</Text></Pressable>
                 </View>
               )}
-              <View {...peoplePinchResponder.panHandlers}>
+              <View nativeID="people-zoom-surface" {...peoplePinchResponder.panHandlers}>
                 {personGroups.map((group) => {
                   const sectionPeople = filteredPeople.filter((person) => (person.group ?? 'other') === group.key);
                   return <View key={group.key} style={styles.peopleSection}>
@@ -1235,7 +1260,7 @@ export default function App() {
               <PageTitle eyebrow="הדברים שלך" title="המשימות שלי" caption="מסודרות לפי דחיפות, חשיבות ומועד" />
               <View style={styles.taskSummary}><View><Text style={styles.taskSummaryNumber}>{openTaskCount}</Text><Text style={styles.taskSummaryLabel}>משימות נשארו</Text></View><View style={styles.taskSummaryIcon}><AppIcon name="tasks" size={22} color={C.ink} /></View></View>
               <View style={styles.taskActionRow}><Text style={styles.sectionTitle}>רשימת משימות</Text><Pressable onPress={() => setTaskModalOpen(true)} style={styles.addButton}><AppIcon name="plus" size={14} color={C.ink} /><Text style={styles.addButtonText}>משימה חדשה</Text></Pressable></View>
-              {sortedTasks.map((task) => <TaskRow key={task.id} task={task} onToggle={() => setTasks((current) => current.map((item) => item.id === task.id ? { ...item, done: !item.done } : item))} />)}
+              {sortedTasks.map((task) => <TaskRow key={task.id} task={task} onChangeDue={(due) => setTasks((current) => current.map((item) => item.id === task.id ? { ...item, due } : item))} onToggle={() => setTasks((current) => current.map((item) => item.id === task.id ? { ...item, done: !item.done } : item))} />)}
               {tasks.length === 0 && <View style={styles.emptyCard}><Text style={styles.emptyText}>עוד אין משימות. נוסיף את הראשונה?</Text></View>}
               <View style={styles.priorityHint}><Text style={styles.priorityHintTitle}>איך נקבעת העדיפות?</Text><Text style={styles.priorityHintBody}>משימה דחופה וחשובה תופיע ראשונה. תאריך היעד עוזר לך לראות מה מתקרב.</Text></View>
             </>
@@ -1420,7 +1445,8 @@ function TabButton({ icon, label, active, onPress }: { icon: IconName; label: st
   );
 }
 
-function TaskRow({ task, onToggle, last = false }: { task: TaskItem; onToggle: () => void; last?: boolean }) {
+function TaskRow({ task, onToggle, onChangeDue, last = false }: { task: TaskItem; onToggle: () => void; onChangeDue: (due: string) => void; last?: boolean }) {
+  const [dateOpen, setDateOpen] = useState(false);
   return (
     <View style={[styles.taskRow, !last && styles.withTopBorder, task.done && styles.taskDone]}>
       <Pressable onPress={onToggle} style={[styles.checkBox, task.done && styles.checkBoxDone]} accessibilityLabel={task.done ? 'סימון כלא הושלמה' : 'סימון כהושלמה'}>
@@ -1431,9 +1457,10 @@ function TaskRow({ task, onToggle, last = false }: { task: TaskItem; onToggle: (
         <View style={styles.taskMeta}>
           <Pill label={task.urgency} tone={task.urgency === 'דחופה' ? 'red' : 'neutral'} />
           <Pill label={task.importance} tone={task.importance === 'חשובה' ? 'blue' : 'neutral'} />
-          <Text style={styles.dueText}>{task.due}</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={`עריכת תאריך משימה ${task.title}`} onPress={() => setDateOpen(true)} style={{ minHeight: 44, justifyContent: 'center' }}><Text style={styles.dueText}>{task.due || 'ללא תאריך'}</Text></Pressable>
         </View>
       </View>
+      {dateOpen && <DatePickerSheet label="תאריך יעד" value={task.due} pastOnly={false} onClose={() => setDateOpen(false)} onSave={(date) => { onChangeDue(displayPersonalDate(date)); setDateOpen(false); }} />}
     </View>
   );
 }
@@ -1460,7 +1487,8 @@ function PersonModal({ profile, people, onClose, onEdit, onSave }: {
   onSave: (person: Person) => void;
 }) {
   const [draft, setDraft] = useState<Person | null>(profile?.person ?? null);
-  React.useEffect(() => setDraft(profile?.person ?? null), [profile?.person]);
+  const [photoEditing, setPhotoEditing] = useState<{ uri: string; framing?: PhotoFraming } | null>(null);
+  React.useEffect(() => { setDraft(profile?.person ?? null); setPhotoEditing(null); }, [profile?.person]);
   if (!profile || !draft) return null;
 
   function updateDraft(changes: Partial<Person>) {
@@ -1475,15 +1503,28 @@ function PersonModal({ profile, people, onClose, onEdit, onSave }: {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [1, 1],
+        allowsEditing: false,
+        base64: true,
         quality: 0.8,
       });
       if (!result.canceled && result.assets[0]) {
-        setDraft((current) => current ? { ...current, photoUri: result.assets[0].uri } : current);
+        const asset = result.assets[0];
+        const source = Platform.OS === 'web' && asset.base64 ? `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}` : asset.uri;
+        const uri = Platform.OS === 'web' ? await prepareProfilePhoto(source) : source;
+        setPhotoEditing({ uri, framing: normalizePhotoFraming({ aspectRatio: asset.width && asset.height ? asset.width / asset.height : 1 }) });
       }
     } catch {
       Alert.alert('לא ניתן לבחור תמונה', 'נסה לבחור תמונה שוב.');
+    }
+  }
+
+  async function editCurrentPhoto() {
+    if (!draft?.photoUri) return;
+    try {
+      const uri = Platform.OS === 'web' ? await prepareProfilePhoto(draft.photoUri) : draft.photoUri;
+      setPhotoEditing({ uri, framing: draft.photoFraming });
+    } catch {
+      Alert.alert('התמונה אינה זמינה', 'יש לבחור שוב את התמונה מהמכשיר. שאר הפרטים נשמרים.');
     }
   }
 
@@ -1500,6 +1541,7 @@ function PersonModal({ profile, people, onClose, onEdit, onSave }: {
           <View style={styles.photoEditorText}>
             <Text style={styles.formLabel}>תמונת פרופיל</Text>
             <Pressable style={styles.photoPickerButton} onPress={choosePhoto}><Text style={styles.photoPickerText}>{draft.photoUri ? 'החלפת תמונה' : 'בחירת תמונה'}</Text></Pressable>
+            {!!draft.photoUri && <Pressable accessibilityRole="button" style={styles.photoPickerButton} onPress={editCurrentPhoto}><Text style={styles.photoPickerText}>עריכת מסגרת התמונה</Text></Pressable>}
           </View>
         </View>
         <Text style={styles.formLabel}>שם מלא</Text>
@@ -1558,6 +1600,7 @@ function PersonModal({ profile, people, onClose, onEdit, onSave }: {
         <Pressable disabled={!canSave} style={[styles.primaryButton, !canSave && styles.primaryButtonDisabled]} onPress={() => onSave(draft)}><Text style={styles.primaryButtonText}>שמירת פרטים</Text></Pressable>
         <Text style={styles.sheetFootnote}>בדוק את מצב השמירה בתחתית המסך אחרי שמירת הפרטים</Text>
         </ScrollView>
+        {photoEditing && <PhotoEditorSheet uri={photoEditing.uri} initialFraming={photoEditing.framing} onClose={() => setPhotoEditing(null)} onSave={(framing) => { updateDraft({ photoUri: photoEditing.uri, photoFraming: framing }); setPhotoEditing(null); }} />}
       </Sheet>
     );
   }
@@ -1602,13 +1645,120 @@ function DetailRow({ label, value, last = false }: { label: string; value: strin
   return <View style={[styles.detailRow, !last && styles.withTopBorder]}><Text style={styles.detailValue}>{value}</Text><Text style={styles.detailLabel}>{label}</Text></View>;
 }
 
+function PhotoEditorSheet({ uri, initialFraming, onClose, onSave }: { uri: string; initialFraming?: PhotoFraming; onClose: () => void; onSave: (framing: PhotoFraming) => void }) {
+  const { width } = useWindowDimensions();
+  const size = Math.max(140, Math.min(260, width - 88));
+  const [framing, setFraming] = useState(() => normalizePhotoFraming(initialFraming));
+  const frameRef = React.useRef(framing);
+  frameRef.current = framing;
+  const gestureStart = React.useRef<{ x: number; y: number; count: number; distance: number; framing: PhotoFraming } | null>(null);
+  function apply(value: PhotoFraming) {
+    const next = normalizePhotoFraming(value);
+    frameRef.current = next;
+    setFraming(next);
+  }
+  React.useEffect(() => {
+    let cancelled = false;
+    Image.getSize(uri, (imageWidth, imageHeight) => {
+      if (!cancelled && imageHeight > 0) apply({ ...frameRef.current, aspectRatio: imageWidth / imageHeight });
+    }, () => {});
+    return () => { cancelled = true; };
+  }, [uri]);
+  function point(event: GestureResponderEvent) {
+    const touches = event.nativeEvent.touches?.length ? event.nativeEvent.touches : [event.nativeEvent];
+    const x = touches.reduce((sum, touch) => sum + touch.pageX, 0) / touches.length;
+    const y = touches.reduce((sum, touch) => sum + touch.pageY, 0) / touches.length;
+    const distance = touches.length >= 2 ? Math.hypot(touches[1].pageX - touches[0].pageX, touches[1].pageY - touches[0].pageY) : 0;
+    return { x, y, count: touches.length, distance };
+  }
+  const responder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderGrant: (event) => { gestureStart.current = { ...point(event), framing: frameRef.current }; },
+    onPanResponderMove: (event) => {
+      const current = point(event);
+      const start = gestureStart.current;
+      if (!start || start.count !== current.count) { gestureStart.current = { ...current, framing: frameRef.current }; return; }
+      apply({ ...start.framing,
+        zoom: start.distance > 0 && current.distance > 0 ? start.framing.zoom * current.distance / start.distance : start.framing.zoom,
+        offsetX: start.framing.offsetX + (current.x - start.x) / size,
+        offsetY: start.framing.offsetY + (current.y - start.y) / size,
+      });
+    },
+    onPanResponderRelease: () => { gestureStart.current = null; },
+    onPanResponderTerminate: () => { gestureStart.current = null; },
+  }), [size]);
+  const previewPerson: Person = { id: '', name: '', city: '', role: '', status: '', statusTags: [], color: C.background, photoUri: uri, photoFraming: framing };
+  return <Sheet visible onClose={onClose}>
+    <View style={styles.modalHeader}><Text style={styles.modalTitle}>התאמת תמונה</Text><Pressable accessibilityRole="button" accessibilityLabel="ביטול עריכת תמונה" style={styles.closeButton} onPress={onClose}><AppIcon name="close" size={16} /></Pressable></View>
+    <Text style={styles.sheetIntro}>גרור להזזת התמונה. אפשר להגדיל ולהקטין בשתי אצבעות או בכפתורים.</Text>
+    <View nativeID="photo-frame-editor" {...responder.panHandlers} style={{ width: size, height: size, alignSelf: 'center', borderRadius: 18, overflow: 'hidden' }}>
+      <View pointerEvents="none"><PersonPhoto person={previewPerson} size={size} /></View>
+      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderWidth: 1, borderRadius: 18, borderColor: C.violetLight }]} />
+    </View>
+    <View style={styles.photoZoomControls}>
+      <Pressable accessibilityRole="button" accessibilityLabel="הגדלת התמונה" style={styles.zoomButton} onPress={() => apply({ ...frameRef.current, zoom: frameRef.current.zoom + 0.1 })}><Text style={styles.zoomButtonText}>＋</Text></Pressable>
+      <Text accessibilityLiveRegion="polite" style={styles.photoZoomValue}>{Math.round(framing.zoom * 100)}%</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="הקטנת התמונה" disabled={framing.zoom <= 1} style={styles.zoomButton} onPress={() => apply({ ...frameRef.current, zoom: frameRef.current.zoom - 0.1 })}><Text style={styles.zoomButtonText}>−</Text></Pressable>
+    </View>
+    <Pressable accessibilityRole="button" style={styles.clearAssigneeButton} onPress={() => apply({ ...frameRef.current, zoom: 1, offsetX: 0, offsetY: 0 })}><Text style={styles.photoPickerText}>איפוס המסגרת</Text></Pressable>
+    <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => onSave(frameRef.current)}><Text style={styles.primaryButtonText}>אישור התמונה</Text></Pressable>
+  </Sheet>;
+}
+
 function PersonalDateField({ label, value, onChange }: { label: string; value?: string; onChange: (value: string) => void }) {
-  const valid = isValidPastDate(value);
+  return <DateField label={label} value={value} onChange={onChange} pastOnly />;
+}
+
+function DateField({ label, value, onChange, pastOnly = false }: { label: string; value?: string; onChange: (value: string) => void; pastOnly?: boolean }) {
+  const [open, setOpen] = useState(false);
   return <View>
     <Text style={styles.formLabel}>{label}</Text>
-    <TextInput accessibilityLabel={label} value={displayPersonalDate(value)} onChangeText={onChange} placeholder="יום/חודש/שנה — 24/06/2002" placeholderTextColor={C.muted} style={styles.formInput} maxLength={10} />
-    {!valid && <Text style={styles.peopleDeleteText}>יש להזין תאריך תקין שאינו בעתיד, למשל 24/06/2002.</Text>}
+    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={() => setOpen(true)} style={[styles.formInput, styles.dateFieldButton]}>
+      <AppIcon name="calendar" size={19} color={C.violetLight} />
+      <Text style={{ color: value ? C.ink : C.muted }}>{displayPersonalDate(value) || 'בחירת תאריך'}</Text>
+    </Pressable>
+    {open && <DatePickerSheet label={label} value={value} pastOnly={pastOnly} onClose={() => setOpen(false)} onSave={(date) => { onChange(date); setOpen(false); }} />}
   </View>;
+}
+
+function DatePickerSheet({ label, value, pastOnly, onClose, onSave }: { label: string; value?: string; pastOnly: boolean; onClose: () => void; onSave: (date: string) => void }) {
+  const today = new Date();
+  const todayParts = { year: today.getFullYear(), month: today.getMonth() + 1, day: today.getDate() };
+  const latest = pastOnly ? calendarKey(todayParts) : undefined;
+  const [parts, setParts] = useState<CalendarParts>(() => {
+    let normalized = normalizePersonalDate(value);
+    if (!normalized && value === 'מחר') {
+      const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+      normalized = calendarKey({ year: tomorrow.getFullYear(), month: tomorrow.getMonth() + 1, day: tomorrow.getDate() });
+    }
+    const [year, month, day] = (normalized ?? calendarKey(todayParts)).split('-').map(Number);
+    return clampCalendarParts({ year, month, day }, latest);
+  });
+  const firstYear = Math.min(1900, parts.year);
+  const lastYear = pastOnly ? todayParts.year : Math.max(todayParts.year + 10, parts.year);
+  const years = Array.from({ length: lastYear - firstYear + 1 }, (_, index) => String(firstYear + index));
+  const maxMonth = pastOnly && parts.year === todayParts.year ? todayParts.month : 12;
+  const maxDay = pastOnly && parts.year === todayParts.year && parts.month === todayParts.month ? todayParts.day : new Date(parts.year, parts.month, 0).getDate();
+  const months = Array.from({ length: maxMonth }, (_, index) => String(index + 1).padStart(2, '0'));
+  const days = Array.from({ length: maxDay }, (_, index) => String(index + 1).padStart(2, '0'));
+  function change(field: keyof CalendarParts, value: string) {
+    setParts((current) => clampCalendarParts({ ...current, [field]: Number(value) }, latest));
+  }
+  return <Sheet visible onClose={onClose}>
+    <View style={styles.modalHeader}><Text style={styles.modalTitle}>{label}</Text><Pressable accessibilityRole="button" accessibilityLabel="ביטול בחירת תאריך" onPress={onClose} style={styles.closeButton}><AppIcon name="close" size={16} /></Pressable></View>
+    <Text style={styles.sheetIntro}>גללו לבחירת יום, חודש ושנה</Text>
+    <View style={styles.timeWheelWrap}>
+      <WheelColumn label="יום" values={days} selectedValue={String(parts.day).padStart(2, '0')} onChange={(value) => change('day', value)} />
+      <WheelColumn label="חודש" values={months} selectedValue={String(parts.month).padStart(2, '0')} onChange={(value) => change('month', value)} />
+      <WheelColumn label="שנה" values={years} selectedValue={String(parts.year)} onChange={(value) => change('year', value)} />
+      <View pointerEvents="none" style={styles.wheelSelection} />
+    </View>
+    <Text style={styles.selectedTimePreview}>{displayPersonalDate(calendarKey(parts))}</Text>
+    <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => onSave(calendarKey(parts))}><Text style={styles.primaryButtonText}>בחירת תאריך</Text></Pressable>
+    <Pressable accessibilityRole="button" style={styles.clearAssigneeButton} onPress={() => onSave('')}><Text style={styles.clearAssigneeText}>ניקוי תאריך</Text></Pressable>
+  </Sheet>;
 }
 
 function GuardModal({ shift, onClose, onSave }: { shift: GuardPost | null; onClose: () => void; onSave: (shift: GuardPost) => void }) {
@@ -1666,12 +1816,13 @@ function WheelColumn({ label, values, selectedValue, onChange }: {
   const initialIndex = Math.max(0, values.indexOf(selectedValue));
   React.useEffect(() => {
     scrollRef.current?.scrollTo({ y: initialIndex * 42, animated: false });
-  }, []);
+  }, [values.length]);
   return (
     <View style={styles.wheelColumn}>
       <Text style={styles.wheelLabel}>{label}</Text>
       <ScrollView
         ref={scrollRef}
+        accessibilityLabel={`גלגלת ${label}`}
         style={styles.wheelScroll}
         contentContainerStyle={styles.wheelContent}
         showsVerticalScrollIndicator={false}
@@ -1684,7 +1835,7 @@ function WheelColumn({ label, values, selectedValue, onChange }: {
         scrollEventThrottle={100}
       >
         {values.map((value) => (
-          <View key={value} style={styles.wheelItem}><Text style={[styles.wheelItemText, selectedValue === value && styles.wheelItemTextActive]}>{value}</Text></View>
+          <Pressable key={value} accessibilityRole="button" accessibilityLabel={`${label} ${value}`} accessibilityState={{ selected: selectedValue === value }} style={styles.wheelItem} onPress={() => { onChange(value); scrollRef.current?.scrollTo({ y: values.indexOf(value) * 42, animated: false }); }}><Text style={[styles.wheelItemText, selectedValue === value && styles.wheelItemTextActive]}>{value}</Text></Pressable>
         ))}
       </ScrollView>
     </View>
@@ -1755,8 +1906,8 @@ function TaskModal({ visible, title, due, urgency, importance, onChangeTitle, on
       <TextInput value={title} onChangeText={onChangeTitle} placeholder="שם המשימה" placeholderTextColor={C.muted} style={styles.formInput} textAlign="right" />
       <ChoiceGroup label="דחיפות" options={['דחופה', 'רגילה']} value={urgency} onChange={onChangeUrgency} />
       <ChoiceGroup label="חשיבות" options={['חשובה', 'רגילה']} value={importance} onChange={onChangeImportance} />
-      <Text style={styles.formLabel}>תאריך יעד או תיאור קצר</Text>
-      <TextInput value={due} onChangeText={onChangeDue} placeholder="למשל: היום או יום ראשון" placeholderTextColor={C.muted} style={styles.formInput} textAlign="right" />
+      <ChoiceGroup label="מועד מהיר" options={['היום', 'מחר']} value={due} onChange={onChangeDue} />
+      <DateField label="תאריך יעד" value={due} onChange={(date) => onChangeDue(date ? displayPersonalDate(date) : '')} />
       <Pressable style={[styles.primaryButton, !title.trim() && styles.primaryButtonDisabled]} onPress={onSave}><Text style={styles.primaryButtonText}>הוספת משימה</Text></Pressable>
     </Sheet>
   );
@@ -2216,17 +2367,20 @@ const styles = StyleSheet.create({
   wheelContent: { alignItems: 'center', paddingVertical: 63 },
   wheelItem: { width: 82, height: 42, alignItems: 'center', justifyContent: 'center' },
   wheelItemText: { color: C.muted, fontSize: 17, fontWeight: '600' },
-  wheelItemTextActive: { color: C.purpleDeep, fontSize: 22, fontWeight: '800' },
+  wheelItemTextActive: { color: C.violetLight, fontSize: 22, fontWeight: '800' },
   wheelColon: { color: C.ink, fontSize: 24, fontWeight: '800', marginTop: 22, marginHorizontal: 2 },
   wheelSelection: { position: 'absolute', left: 23, right: 23, top: 85, height: 42, borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.violet, borderRadius: 8 },
   selectedTimePreview: { color: C.ink, fontSize: 22, fontWeight: '800', textAlign: 'center', marginTop: 12 },
   photoEditorRow: { flexDirection: 'row-reverse', alignItems: 'center', marginBottom: 16 },
   photoEditorText: { flex: 1, alignItems: 'flex-end', marginRight: 14 },
+  photoZoomControls: { flexDirection: 'row-reverse', justifyContent: 'center', alignItems: 'center', gap: 18, marginTop: 16 },
+  photoZoomValue: { color: C.ink, fontSize: 16, minWidth: 55, textAlign: 'center' },
   photoPickerButton: { backgroundColor: C.purpleSoft, borderWidth: 1, borderColor: C.line, borderRadius: radius.control, paddingHorizontal: 13, paddingVertical: 9, marginTop: 3 },
   photoPickerText: { color: C.purple, fontSize: 11, fontWeight: '800' },
   formHint: { color: C.muted, fontSize: 10, textAlign: 'right', marginTop: -9, marginBottom: 12 },
   formLabel: { color: C.ink, fontSize: 12, fontWeight: '700', textAlign: 'right', marginBottom: 7, marginTop: 4 },
   formInput: { minHeight: 48, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderRadius: radius.control, paddingHorizontal: 13, color: C.ink, marginBottom: 14 },
+  dateFieldButton: { flexDirection: 'row-reverse', alignItems: 'center', gap: 10 },
   personChoice: { flexDirection: 'row-reverse', alignItems: 'center', padding: 8, borderRadius: radius.control, borderWidth: 1, borderColor: 'transparent', marginBottom: 4 },
   personChoiceActive: { borderColor: C.violet, backgroundColor: C.purpleSoft },
   choiceName: { color: C.ink, fontSize: 12, fontWeight: '700', marginRight: 9 },

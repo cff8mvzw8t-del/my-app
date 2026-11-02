@@ -1,4 +1,21 @@
-/** Calendar dates only: storage is ISO, the Hebrew form accepts DD/MM/YYYY. */
+/** Calendar dates only: storage is ISO; display uses DD/MM/YYYY. */
+export type CalendarParts = { year: number; month: number; day: number };
+
+export function calendarKey(parts: CalendarParts): string {
+  return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+}
+
+export function clampCalendarParts(parts: CalendarParts, latest?: string): CalendarParts {
+  const month = Math.max(1, Math.min(12, parts.month));
+  const day = Math.max(1, Math.min(new Date(parts.year, month, 0).getDate(), parts.day));
+  const adjusted = { year: parts.year, month, day };
+  if (latest && calendarKey(adjusted) > latest) {
+    const [year, maxMonth, maxDay] = latest.split('-').map(Number);
+    return { year, month: maxMonth, day: maxDay };
+  }
+  return adjusted;
+}
+
 export function normalizePersonalDate(value?: string): string | undefined {
   if (!value?.trim()) return undefined;
   const text = value.trim();

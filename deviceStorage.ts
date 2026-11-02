@@ -1,5 +1,6 @@
 import type { Person, GuardPost, GuardTimeSlot, GuardAssignment, RosterEntry, TaskItem, ReadinessShift } from './App';
 import { normalizePersonalDate } from './personalDates';
+import { isPhotoFraming } from './photoFraming';
 
 export type SavedAppData = {
   people: Person[];
@@ -35,6 +36,7 @@ function isAppData(value: unknown): value is SavedAppData {
     && optionalDate(person.birthday)
     && (person.partner === undefined || (record(person.partner) && typeof person.partner.name === 'string' && optionalDate(person.partner.birthday) && optionalDate(person.partner.relationshipStart)))
     && (person.photoUri === undefined || typeof person.photoUri === 'string')
+    && (person.photoFraming === undefined || isPhotoFraming(person.photoFraming))
     && (person.statusDetails === undefined || (record(person.statusDetails) && Object.entries(person.statusDetails).every(([key, text]) => ['medical', 'welfare', 'fitness', 'discipline', 'values'].includes(key) && typeof text === 'string'))))) return false;
   if (!rows(value.guardPosts, (post) => fields(post, ['id', 'place', 'details'])) || !unique(value.guardPosts, 'id')) return false;
   if (!rows(value.guardTimeSlots, (slot) => fields(slot, ['id', 'time'])) || !unique(value.guardTimeSlots, 'id')) return false;

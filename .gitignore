@@ -1,0 +1,15 @@
+node_modules/
+.expo/
+dist/
+web-build/
+*.log
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+.DS_Store
+work/
+my-roster-backup-*.json
+original-save-*.json

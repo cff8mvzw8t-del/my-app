@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>תצוגת האפליקציה באייפון</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: #08070b; }
+    body { min-height: 100vh; display: grid; place-items: center; padding: 16px; background: radial-gradient(ellipse at 50% 45%, #21142b, #0b0910 48%, #050507); }
+    .phone { width: 409px; height: 868px; padding: 7px; border: 1px solid #45414a; border-radius: 54px; background: #08080b; box-shadow: 0 28px 80px #000a, 0 0 0 2px #17151b; position: relative; }
+    .screen { width: 393px; height: 852px; border-radius: 46px; overflow: hidden; position: relative; background: #000; }
+    iframe { width: 393px; height: 852px; border: 0; display: block; background: #000; }
+    .island { position: absolute; top: 7px; left: 50%; transform: translateX(-50%); width: 112px; height: 34px; border-radius: 18px; background: #000; box-shadow: 0 0 0 1px #ffffff09; pointer-events: none; }
+    .home { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); width: 108px; height: 4px; border-radius: 4px; background: #8d8d93; pointer-events: none; }
+    @media (max-width: 440px) { body { padding: 12px; place-items: start center; } .phone { transform: scale(calc((100vw - 24px) / 409)); transform-origin: top center; } }
+  </style>
+</head>
+<body>
+  <div class="phone" aria-label="תצוגת האפליקציה בגודל אייפון עם אי דינמי">
+    <div class="screen">
+      <iframe title="האפליקציה" src="/?phone-frame=20261102"></iframe>
+      <div class="island" aria-hidden="true"></div>
+      <div class="home" aria-hidden="true"></div>
+    </div>
+  </div>
+</body>
+</html>

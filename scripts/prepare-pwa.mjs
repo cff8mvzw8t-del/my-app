@@ -23,6 +23,7 @@ export async function preparePwa(dist, base = '/') {
   html = html.replace('</head>', `
     <style id="mobile-shell">
       html, body { margin: 0; background: #0D080C; overflow: hidden; overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
+      body { direction: ltr; }
       #root { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; overflow: hidden; direction: ltr; background: #000; }
     </style>
     <link rel="manifest" href="${base}manifest.webmanifest">

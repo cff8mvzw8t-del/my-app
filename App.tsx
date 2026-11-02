@@ -289,12 +289,12 @@ function getDavidFontFamily(style: React.ComponentProps<typeof NativeText>['styl
 
 function Text({ style, ...props }: React.ComponentProps<typeof NativeText>) {
   const fontsLoaded = React.useContext(DavidFontLoadedContext);
-  return <NativeText {...props} style={[style, { fontFamily: fontsLoaded ? getDavidFontFamily(style) : 'David' }]} />;
+  return <NativeText {...props} style={[{ textAlign: 'right', writingDirection: 'rtl' }, style, { fontFamily: fontsLoaded ? getDavidFontFamily(style) : 'David' }]} />;
 }
 
 function TextInput({ style, ...props }: React.ComponentProps<typeof NativeTextInput>) {
   const fontsLoaded = React.useContext(DavidFontLoadedContext);
-  return <NativeTextInput {...props} style={[style, { fontFamily: fontsLoaded ? getDavidFontFamily(style) : 'David' }]} />;
+  return <NativeTextInput {...props} style={[{ textAlign: 'right', writingDirection: 'rtl' }, style, { fontFamily: fontsLoaded ? getDavidFontFamily(style) : 'David' }]} />;
 }
 
 function AppIcon({ name, size = 20, color = C.ink, filled = false }: { name: IconName; size?: number; color?: string; filled?: boolean }) {
@@ -453,6 +453,7 @@ export default function App() {
       /* iOS may paint a system-owned strip beyond the page viewport. Match
          the last navigation gradient stop there; the app itself stays black. */
       html, body { background: #0D080C; margin: 0; overflow: hidden; overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
+      body { direction: ltr; }
       #root { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; overflow: hidden; direction: ltr; background: #000; }
       #app-safe-area { min-height: 0; padding-bottom: 0 !important; }
       #app-bottom-navigation { direction: ltr; padding-bottom: max(18px, env(safe-area-inset-bottom, 0px)); }
@@ -1905,7 +1906,7 @@ const styles = StyleSheet.create({
   guardStatusTitle: { color: C.ink, fontSize: 12, fontWeight: '800', textAlign: 'right' },
   guardStatusRow: { minHeight: 34, flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: C.line },
   guardStatusPlace: { color: C.muted, fontSize: 11, textAlign: 'right' },
-  guardStatusName: { color: C.ink, fontSize: 12, fontWeight: '700', textAlign: 'left' },
+  guardStatusName: { color: C.ink, fontSize: 12, fontWeight: '700', textAlign: 'right' },
   guardStatusEmpty: { color: C.muted, fontSize: 11, textAlign: 'right', paddingVertical: 5 },
   guardStatusDivider: { height: 1, backgroundColor: C.line, marginVertical: 4 },
   cardPrimary: { color: C.ink, fontSize: 14, fontWeight: '700', textAlign: 'right' },
@@ -2112,7 +2113,7 @@ const styles = StyleSheet.create({
   priorityHint: { backgroundColor: C.blueSoft, borderRadius: radius.card, padding: 14, marginTop: 12, borderWidth: 1, borderColor: C.line },
   priorityHintTitle: { color: C.blue, fontSize: 12, fontWeight: '700', textAlign: 'right', marginBottom: 5 },
   priorityHintBody: { color: C.muted, fontSize: 11, lineHeight: 17, textAlign: 'right' },
-  tabBar: { flexDirection: 'row', flexShrink: 0, minHeight: 92, borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: '#332B38', borderTopLeftRadius: 40, borderTopRightRadius: 40, backgroundColor: '#100D13', paddingHorizontal: 10, paddingTop: 15, paddingBottom: 18, overflow: 'hidden' },
+  tabBar: { flexDirection: 'row-reverse', flexShrink: 0, minHeight: 92, borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: '#332B38', borderTopLeftRadius: 40, borderTopRightRadius: 40, backgroundColor: '#100D13', paddingHorizontal: 10, paddingTop: 15, paddingBottom: 18, overflow: 'hidden' },
   tabButton: { flex: 1, minHeight: 54, alignItems: 'center', justifyContent: 'flex-start', position: 'relative', zIndex: 1 },
   tabIconWrap: { width: 35, height: 28, alignItems: 'center', justifyContent: 'center' },
   tabLabel: { color: C.navigationMuted, fontSize: 11, marginTop: 5, textAlign: 'center' },

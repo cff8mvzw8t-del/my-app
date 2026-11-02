@@ -857,11 +857,7 @@ export default function App() {
                   })}
                 </View>
                 <View style={styles.topBar}>
-                  <View style={styles.brandMark}><Text style={styles.brandMarkText}>מ</Text></View>
-                  <View style={styles.homeBrandCopy}>
-                    <Text style={styles.brandName}>המסגרת שלי</Text>
-                    <Text style={styles.homeMotto}>איתך לעד</Text>
-                  </View>
+                  <Text style={styles.homeMotto}>איתך לעד</Text>
                   <View style={styles.topBarSpacer} />
                   <Pressable style={({ pressed }) => [styles.topIconButton, pressed && styles.pressedControl]} onPress={() => setTab('people')} accessibilityRole="button" accessibilityLabel="פתיחת רשימת אנשים">
                     <AppIcon name="search" color={C.ink} />
@@ -1871,12 +1867,8 @@ const styles = StyleSheet.create({
   homeMountainImage: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%', opacity: 1 },
   homeMountainFade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 78, flexDirection: 'column' },
   homeMountainFadeStep: { flex: 1 },
-  homeBrandCopy: { alignItems: 'flex-end', justifyContent: 'center', marginRight: 9 },
   homeMotto: { color: '#E3D2EF', fontSize: 14, lineHeight: 17, marginTop: 1 },
   topBar: { flexDirection: 'row-reverse', alignItems: 'center', marginBottom: spacing.xl },
-  brandMark: { width: 34, height: 34, borderRadius: radius.control, backgroundColor: C.purple, alignItems: 'center', justifyContent: 'center', shadowColor: C.violet, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 2 },
-  brandMarkText: { color: C.ink, fontSize: 19, fontWeight: '800' },
-  brandName: { color: C.ink, fontSize: 15, fontWeight: '700' },
   topBarSpacer: { flex: 1 },
   topIconButton: { width: 40, height: 40, borderRadius: radius.pill, backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.line },
   topIcon: { color: C.ink, fontSize: 26, lineHeight: 30 },

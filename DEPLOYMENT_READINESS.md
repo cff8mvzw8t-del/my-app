@@ -2,6 +2,16 @@
 
 ## Implementation checkpoint
 
+### Published and verified
+
+Live URL: **https://cff8mvzw8t-del.github.io/my-app/**. Pages was enabled through the existing Git credential helper and the failed job was retried using the authenticated API. Run `41514273784`, attempt 2, succeeded. The published page returns HTTP 200.
+
+An isolated Microsoft Edge browser session at a 393×852 mobile viewport loaded the production app with no JavaScript page errors, installed the service worker, then successfully reloaded with network disabled. Record data was preserved (the save timestamp was excluded from comparison). A task created through the UI while offline persisted after another offline reload. The manifest loaded offline and has `/my-app/` scope/start URL and standalone display. These browser checks do not replace testing Safari and Home Screen installation on the actual iPhone. Test records existed only in the isolated browser session.
+
+Next owner steps: open the permanent URL in Safari while online, wait for the offline-ready notice, choose Share → Add to Home Screen, then test reopening in airplane mode. Export/import JSON to transfer records from a previous origin. No backend or cloud backup was added.
+
+### Earlier deployment history
+
 Commit `a234580` was pushed to `master`. GitHub Actions run `41510938457` passed dependency installation, TypeScript checking, offline logic tests, and production build. It stopped at `actions/configure-pages` because Pages was not yet enabled. The owner subsequently confirmed selecting GitHub Actions as the Pages source. The connector cannot rerun Actions jobs (403), so this documentation update triggers a fresh deployment through the already authenticated Git push. No additional hosting connection is required. Production status must be verified after that run.
 
 The repository now exists at `https://github.com/cff8mvzw8t-del/my-app`, with `master` as its default branch. The connector successfully read its package.json and reports push/admin access. The local initial commit matches the remote.

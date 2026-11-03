@@ -1064,8 +1064,10 @@ function StoredApp({ stored }: { stored: LoadResult }) {
                 </View>
               )}
               <View nativeID="people-zoom-surface" {...peoplePinchResponder.panHandlers}>
-                {personGroups.map((group) => {
-                  const sectionPeople = filteredPeople.filter((person) => (person.group ?? 'other') === group.key);
+                {[{ key: 'commanders', label: 'מפקדים' }, ...personGroups].map((group) => {
+                  const sectionPeople = filteredPeople.filter((person) =>
+                    (person.isCommander ? 'commanders' : (person.group ?? 'other')) === group.key
+                  );
                   return <View key={group.key} style={styles.peopleSection}>
                     <View style={styles.peopleSectionHeader}><Text style={styles.sectionTitle}>{group.label}</Text><Pill label={`${sectionPeople.length}`} tone="neutral" /></View>
                     {sectionPeople.length === 0 && <Text style={styles.peopleSectionEmpty}>אין אנשים בקבוצה הזו</Text>}

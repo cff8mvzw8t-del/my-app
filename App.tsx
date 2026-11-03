@@ -29,6 +29,7 @@ import { personGroups, normalizedPersonName, getReadinessCandidates, assignReadi
 import { normalizePersonalDate, displayPersonalDate, isValidPastDate, relationshipDuration, calendarKey, clampCalendarParts, type CalendarParts } from './personalDates';
 import { normalizePhotoFraming, photoFrameRect, PASSPORT_ASPECT_RATIO, type PhotoFraming } from './photoFraming';
 import { prepareProfilePhoto } from './profilePhotoUri';
+import { makePeopleQuiz, type QuizQuestion } from './peopleQuiz';
 
 type DomainTab = 'medical' | 'welfare' | 'fitness' | 'education' | 'readiness';
 type Tab = 'home' | 'people' | 'guards' | 'roster' | 'tasks' | DomainTab;
@@ -256,17 +257,22 @@ function Avatar({ person, size = 48 }: { person: Person; size?: number }) {
   );
 }
 
-function PersonPhoto({ person, size = 82 }: { person: Person; size?: number }) {
+function PersonPhoto({ person, size = 82, onUnavailable }: { person: Person; size?: number; onUnavailable?: () => void }) {
   const [failedUri, setFailedUri] = useState<string | null>(null);
   const height = size / PASSPORT_ASPECT_RATIO;
   if (person.photoUri && failedUri !== person.photoUri) {
+    const handleError = () => {
+      setFailedUri(person.photoUri!);
+      onUnavailable?.();
+    };
     if (person.photoFraming) {
       return <View style={{ width: size, height, borderRadius: 8, overflow: 'hidden', backgroundColor: C.background }}>
-        <Image source={{ uri: person.photoUri }} onError={() => setFailedUri(person.photoUri!)} resizeMode="stretch" style={[{ position: 'absolute' }, photoFrameRect({ ...person.photoFraming, frameAspectRatio: PASSPORT_ASPECT_RATIO }, size)]} />
+        <Image source={{ uri: person.photoUri }} onError={handleError} resizeMode="stretch" style={[{ position: 'absolute' }, photoFrameRect({ ...person.photoFraming, frameAspectRatio: PASSPORT_ASPECT_RATIO }, size)]} />
       </View>;
     }
-    return <Image source={{ uri: person.photoUri }} onError={() => setFailedUri(person.photoUri!)} resizeMode="cover" style={{ width: size, height, borderRadius: 8 }} />;
+    return <Image source={{ uri: person.photoUri }} onError={handleError} resizeMode="cover" style={{ width: size, height, borderRadius: 8 }} />;
   }
+  if (onUnavailable) return <View style={{ width: size, height }} />;
   return (
     <View style={[styles.photoPlaceholder, { width: size, height, borderRadius: 8, backgroundColor: person.color }]}>
       <Text style={[styles.photoInitials, { fontSize: size * 0.28 }]}>{person.name ? initials(person.name) : '＋'}</Text>
@@ -409,6 +415,7 @@ function StoredApp({ stored }: { stored: LoadResult }) {
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [backupOpen, setBackupOpen] = useState(false);
   const [quickActionsOpen, setQuickActionsOpen] = useState(false);
+  const [peopleQuizOpen, setPeopleQuizOpen] = useState(false);
   const [backupMessage, setBackupMessage] = useState('');
   const [pendingRestore, setPendingRestore] = useState<SavedAppData | null>(null);
   const [fontsLoaded, fontError] = useFonts({
@@ -1050,6 +1057,10 @@ function StoredApp({ stored }: { stored: LoadResult }) {
           {tab === 'people' && (
             <>
               <PageTitle eyebrow="המרחב שלך" title="אנשים" caption={`${people.length} אנשים ברשימה`} />
+              <Pressable style={styles.navigationAction} onPress={() => setPeopleQuizOpen(true)} accessibilityRole="button">
+                <AppIcon name="sparkle" color={C.navigationPurple} size={24} />
+                <Text style={styles.navigationActionText}>משחק היכרות</Text>
+              </Pressable>
               <View style={styles.searchBox}><AppIcon name="search" size={18} color={C.muted} /><TextInput value={search} onChangeText={setSearch} placeholder="חיפוש לפי שם או תפקיד" placeholderTextColor={C.muted} style={styles.searchInput} textAlign="right" /></View>
               <View style={styles.peopleZoomRow}>
                 <Text style={styles.peopleZoomHint}>צביטה בשתי אצבעות לשינוי גודל</Text>
@@ -1369,11 +1380,16 @@ function StoredApp({ stored }: { stored: LoadResult }) {
           <Pressable style={({ pressed }) => [styles.domainMenuCard, pressed && styles.pressedControl]} onPress={() => { setQuickActionsOpen(false); setTab('tasks'); }} accessibilityRole="button"><AppIcon name="taskCircle" color={C.navigationPurple} size={26} /><Text style={styles.domainMenuText}>משימות</Text></Pressable>
         </View>
         <Text style={styles.formLabel}>פעולות</Text>
+        <Pressable style={styles.navigationAction} onPress={() => { setQuickActionsOpen(false); setPeopleQuizOpen(true); }} accessibilityRole="button">
+          <AppIcon name="sparkle" color={C.navigationPurple} size={24} />
+          <Text style={styles.navigationActionText}>משחק היכרות</Text>
+        </Pressable>
         <Pressable style={styles.navigationAction} onPress={() => { setQuickActionsOpen(false); beginNewPerson(); }} accessibilityRole="button"><AppIcon name="people" color={C.navigationPurple} size={24} /><Text style={styles.navigationActionText}>הוספת אדם</Text></Pressable>
         <Pressable style={styles.navigationAction} onPress={() => { setQuickActionsOpen(false); setTaskModalOpen(true); }} accessibilityRole="button"><AppIcon name="tasks" color={C.navigationPurple} size={24} /><Text style={styles.navigationActionText}>הוספת משימה</Text></Pressable>
         <Pressable style={styles.navigationAction} onPress={() => { setQuickActionsOpen(false); setBackupOpen(true); }} accessibilityRole="button" accessibilityLabel="שמירת מידע וגיבויים"><AppIcon name="share" color={C.navigationPurple} size={24} /><View><Text style={styles.navigationActionText}>שמירת מידע וגיבויים</Text><Text style={styles.navigationActionHint}>{saveState === 'saved' ? 'השינויים נשמרים במכשיר הזה' : saveState === 'saving' ? 'שומר את השינויים…' : 'בדיקת מצב השמירה'}</Text></View></Pressable>
         </ScrollView>
       </Sheet>
+      {peopleQuizOpen && <PeopleQuiz people={people} onClose={() => setPeopleQuizOpen(false)} />}
       <Sheet visible={backupOpen} onClose={() => { setBackupOpen(false); setPendingRestore(null); }}>
         <ScrollView style={styles.personSheetScroll} keyboardShouldPersistTaps="handled">
           <View style={styles.modalHeader}>
@@ -1553,6 +1569,122 @@ function Sheet({ visible, onClose, children }: { visible: boolean; onClose: () =
         </View>
       </View>
     </Modal>
+  );
+}
+
+const quizPrompts = {
+  name: 'מי בתמונה?',
+  face: 'איזה פרצוף מתאים לשם?',
+  surname: 'מה שם המשפחה?',
+  city: 'איפה מקום המגורים?',
+};
+
+function PeopleQuiz({ people, onClose }: { people: Person[]; onClose: () => void }) {
+  const [round, setRound] = useState(() => makePeopleQuiz(people));
+  const [index, setIndex] = useState(0);
+  const [answers, setAnswers] = useState<boolean[]>([]);
+  const [input, setInput] = useState('');
+  const [unavailableQuestion, setUnavailableQuestion] = useState<QuizQuestion | null>(null);
+  const question = round[index];
+  const answered = answers.length > index;
+  const unavailable = question === unavailableQuestion;
+  const missed = round.filter((_, position) => answers[position] === false);
+
+  function answer(value: string) {
+    if (!question || unavailable || !value.trim()) return;
+    const correct = question.options.length ? value === question.answer : normalizedPersonName(value) === normalizedPersonName(question.answer);
+    setAnswers((current) => current.length === index ? [...current, correct] : current);
+  }
+
+  function start(questions: QuizQuestion[]) {
+    setRound(questions);
+    setAnswers([]);
+    setIndex(0);
+    setInput('');
+    setUnavailableQuestion(null);
+  }
+
+  return (
+    <Sheet visible onClose={onClose}>
+      <View style={styles.modalHeader}>
+        <Text style={styles.modalTitle}>משחק היכרות</Text>
+        <Pressable style={styles.closeButton} onPress={onClose} accessibilityRole="button" accessibilityLabel="סגירת המשחק">
+          <AppIcon name="close" size={16} />
+        </Pressable>
+      </View>
+      <ScrollView key={question ? `${index}:${question.kind}:${question.person.id}` : index} style={styles.personSheetScroll} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
+        {!round.length ? (
+          <Text style={styles.backupExplanation}>כדי להתחיל משחק, הוסף מקומות מגורים או תמונות לפרטים בלשונית אנשים.</Text>
+        ) : question ? (
+          <>
+            <Text style={styles.backupExplanation}>שאלה {index + 1} מתוך {round.length}</Text>
+            <Text style={styles.formLabel}>{quizPrompts[question.kind]}</Text>
+            <View style={{ alignItems: 'center', gap: 8, marginBottom: 14 }}>
+              {(question.kind === 'name' || question.kind === 'surname') && (
+                <PersonPhoto person={question.person} size={88} onUnavailable={() => setUnavailableQuestion(question)} />
+              )}
+              {question.kind === 'city' && question.person.photoUri && <PersonPhoto person={question.person} size={64} />}
+              {question.kind !== 'name' && (
+                <Text style={styles.navigationActionText}>
+                  {question.kind === 'surname' ? question.person.name.trim().split(/\s+/)[0] : question.person.name}
+                </Text>
+              )}
+            </View>
+            {question.options.length ? (
+              <View style={question.kind === 'face' ? styles.quizPhotoOptions : undefined}>
+                {question.options.map(({ value, photo }, position) => (
+                  <Pressable key={value} accessibilityRole="button" accessibilityLabel={photo ? `תמונה ${position + 1}` : value}
+                    disabled={answered || unavailable} onPress={() => answer(value)}
+                    style={[styles.peopleActionButton, photo ? styles.quizPhotoOption : styles.quizTextOption, answered && value === question.answer && styles.personSelected]}>
+                    {photo ? <PersonPhoto person={photo} size={64} onUnavailable={() => setUnavailableQuestion(question)} /> : <Text style={styles.peopleActionText}>{value}</Text>}
+                  </Pressable>
+                ))}
+              </View>
+            ) : !answered && !unavailable && (
+              <>
+                <TextInput value={input} onChangeText={setInput} onSubmitEditing={() => answer(input)}
+                  accessibilityLabel="התשובה שלך" placeholder="התשובה שלך" placeholderTextColor={C.muted} style={styles.formInput} />
+                <Pressable accessibilityRole="button" disabled={!input.trim()} onPress={() => answer(input)}
+                  style={[styles.primaryButton, !input.trim() && styles.primaryButtonDisabled]}>
+                  <Text style={styles.primaryButtonText}>בדיקת תשובה</Text>
+                </Pressable>
+              </>
+            )}
+            {unavailable && !answered && (
+              <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => {
+                setInput('');
+                setUnavailableQuestion(null);
+                setRound((current) => current.filter((item) => item !== question));
+              }}>
+                <Text style={styles.primaryButtonText}>דלג על תמונה לא זמינה</Text>
+              </Pressable>
+            )}
+            {answered && (
+              <View style={styles.personStatusDetail}>
+                <Text style={styles.formLabel} accessibilityLiveRegion="polite">
+                  {answers[index] ? 'נכון!' : `התשובה הנכונה היא ${question.kind === 'face' ? 'התמונה המסומנת' : question.answer}`}
+                </Text>
+                <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => { setInput(''); setIndex(index + 1); }}>
+                  <Text style={styles.primaryButtonText}>{index + 1 === round.length ? 'לציון שלי' : 'לשאלה הבאה'}</Text>
+                </Pressable>
+              </View>
+            )}
+          </>
+        ) : (
+          <>
+            <Text style={styles.modalTitle}>הציון שלך {answers.filter(Boolean).length} מתוך {round.length}</Text>
+            {!!missed.length && (
+              <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => start(missed)}>
+                <Text style={styles.primaryButtonText}>תרגול השאלות שטעיתי בהן</Text>
+              </Pressable>
+            )}
+            <Pressable accessibilityRole="button" style={[styles.peopleActionButton, styles.quizTextOption]} onPress={() => start(makePeopleQuiz(people))}>
+              <Text style={styles.peopleActionText}>סבב חדש</Text>
+            </Pressable>
+          </>
+        )}
+      </ScrollView>
+    </Sheet>
   );
 }
 
@@ -2352,6 +2484,9 @@ const styles = StyleSheet.create({
   peopleCardCheck: { alignSelf: 'flex-end', marginBottom: 8 },
   personSelected: { borderColor: C.violet, backgroundColor: C.purpleSoft },
   personSheetScroll: { flexShrink: 1 },
+  quizPhotoOptions: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 8 },
+  quizPhotoOption: { padding: 8, marginBottom: 8 },
+  quizTextOption: { marginBottom: 8 },
   personStatusInput: { minHeight: 76, paddingTop: 12, paddingBottom: 12 },
   personStatusDetail: { padding: 12, marginTop: 8, backgroundColor: C.surface, borderRadius: radius.control, borderWidth: 1, borderColor: C.line },
   personStatusValue: { color: C.muted, fontSize: 13, lineHeight: 20, textAlign: 'right' },

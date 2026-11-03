@@ -1104,6 +1104,7 @@ function StoredApp({ stored }: { stored: LoadResult }) {
                         <Text style={styles.personCardName} numberOfLines={1}>{person.name}</Text>
                         {person.isCommander && <Pill label="מפקד" tone="blue" />}
                         <Text style={styles.personCardRole} numberOfLines={1}>{person.role || 'תפקיד לא צוין'}</Text>
+                        <Text style={styles.personCardCity} numberOfLines={2}>{person.city.trim() || 'מקום מגורים לא צוין'}</Text>
                         <Pill label={person.status} tone={person.status === 'במסגרת' ? 'green' : 'orange'} />
                         {!!person.statusTags.length && (
                           <View style={styles.statusTagRow}>
@@ -2360,6 +2361,7 @@ const styles = StyleSheet.create({
   personCardLarge: { width: '97%', minHeight: 264 },
   personCardName: { width: '100%', color: C.ink, fontSize: 12, fontWeight: '800', textAlign: 'center', marginTop: 8 },
   personCardRole: { maxWidth: '100%', color: C.muted, fontSize: 9, textAlign: 'center', marginTop: 3, marginBottom: 6 },
+  personCardCity: { maxWidth: '100%', color: C.muted, fontSize: 11, textAlign: 'center', marginBottom: 6 },
   peopleCompactGrid: { flexDirection: 'row-reverse', flexWrap: 'wrap', justifyContent: 'space-between', marginTop: 1 },
   personCompactCard: { aspectRatio: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.card, borderRadius: radius.card, borderWidth: 1, borderColor: C.line, paddingHorizontal: 5, paddingVertical: 7, marginBottom: 9 },
   personCompactName: { width: '100%', color: C.ink, fontSize: 11, lineHeight: 15, fontWeight: '800', textAlign: 'center' },

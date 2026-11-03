@@ -961,7 +961,10 @@ function StoredApp({ stored }: { stored: LoadResult }) {
                   </Pressable>
                 </View>
                 <View style={styles.greetingBlock}>
-                  <Text style={styles.greetingSmall}>{formatToday()}</Text>
+                  <View style={{ flexDirection: 'row-reverse', alignItems: 'center', flexWrap: 'wrap', columnGap: 12 }}>
+                    <Text style={styles.greetingSmall}>{formatToday()}</Text>
+                    {Platform.OS === 'web' && <HomeWeather />}
+                  </View>
                   <Text style={styles.greetingTitle}>{formatGreeting()}</Text>
                   <Text style={styles.homeQuote}>{'מַיִם רַבִּים לֹא יוּכְלוּ לְכַבּוֹת אֶת הָאַהֲבָה\nוּנְהָרוֹת לֹא יִשְׁטְפוּהָ'}</Text>
                 </View>
@@ -1534,6 +1537,47 @@ function TaskRow({ task, onToggle, onChangeDue, last = false }: { task: TaskItem
       {dateOpen && <DatePickerSheet label="תאריך יעד" value={task.due} pastOnly={false} onClose={() => setDateOpen(false)} onSave={(date) => { onChangeDue(displayPersonalDate(date)); setDateOpen(false); }} />}
     </View>
   );
+}
+
+function HomeWeather() {
+  const [weather, setWeather] = useState<{ temperature: number; wind: number } | null>(null);
+  const [status, setStatus] = useState<'idle' | 'loading' | 'location' | 'error'>('idle');
+
+  function loadWeather() {
+    const location = navigator.geolocation;
+    if (!location) {
+      setStatus('location');
+      return;
+    }
+    setStatus('loading');
+    location.getCurrentPosition(async ({ coords }) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      try {
+        const latitude = coords.latitude.toFixed(2);
+        const longitude = coords.longitude.toFixed(2);
+        const response = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,wind_speed_10m&temperature_unit=celsius&wind_speed_unit=kn`, { signal: controller.signal });
+        if (!response.ok) throw new Error('Weather request failed');
+        const { current } = await response.json();
+        if (!Number.isFinite(current?.temperature_2m) || !Number.isFinite(current?.wind_speed_10m)) throw new Error('Missing weather data');
+        setWeather({ temperature: Math.round(current.temperature_2m), wind: Math.round(current.wind_speed_10m) });
+        setStatus('idle');
+      } catch {
+        setStatus('error');
+      } finally {
+        clearTimeout(timeout);
+      }
+    }, () => setStatus('location'), { timeout: 10000, maximumAge: 300000 });
+  }
+
+  const label = status === 'loading' ? 'טוען מזג אוויר…'
+    : status === 'location' ? 'מיקום לא זמין · נסה שוב'
+    : status === 'error' ? 'מזג אוויר לא זמין · נסה שוב'
+    : weather ? `\u2066${weather.temperature}°C\u2069 · רוח ${weather.wind} קשר`
+    : 'מזג אוויר לפי מיקום';
+  return <Pressable accessibilityRole="button" accessibilityLabel={weather && status === 'idle' ? `${label}, רענון מזג אוויר` : label} disabled={status === 'loading'} onPress={loadWeather} style={{ minHeight: 44, justifyContent: 'center' }}>
+    <Text accessibilityLiveRegion="polite" style={{ color: C.violetLight, fontSize: 13 }}>{label}</Text>
+  </Pressable>;
 }
 
 function TrackingAutocomplete({ label, options, selected, onSelect, compact = false, hint }: {

@@ -961,10 +961,8 @@ function StoredApp({ stored }: { stored: LoadResult }) {
                   </Pressable>
                 </View>
                 <View style={styles.greetingBlock}>
-                  <View style={{ flexDirection: 'row-reverse', alignItems: 'center', flexWrap: 'wrap', columnGap: 12 }}>
-                    <Text style={styles.greetingSmall}>{formatToday()}</Text>
-                    {Platform.OS === 'web' && <HomeWeather />}
-                  </View>
+                  <Text style={styles.greetingSmall}>{formatToday()}</Text>
+                  {Platform.OS === 'web' && <HomeWeather />}
                   <Text style={styles.greetingTitle}>{formatGreeting()}</Text>
                   <Text style={styles.homeQuote}>{'מַיִם רַבִּים לֹא יוּכְלוּ לְכַבּוֹת אֶת הָאַהֲבָה\nוּנְהָרוֹת לֹא יִשְׁטְפוּהָ'}</Text>
                 </View>

@@ -2,7 +2,15 @@ import type { Person, GuardPost, GuardTimeSlot, GuardAssignment, RosterEntry, Ta
 import { normalizePersonalDate } from './personalDates';
 import { isPhotoFraming } from './photoFraming';
 
-export type TrackingEvent = { id: string; personName: string; personId: string; date: string; time: string; value: string; details: string };
+export type TrackingKind = 'שיפור' | 'שימור';
+export type TrackingEvent = { id: string; personName: string; personId: string; date: string; time: string; value: string; details: string; kind?: TrackingKind; media?: { kind: 'image' | 'video'; uri: string } };
+
+function validTrackingMedia(media: unknown): boolean {
+  if (media === undefined) return true;
+  if (!media || typeof media !== 'object') return false;
+  const { kind, uri } = media as Record<string, unknown>;
+  return (kind === 'image' || kind === 'video') && typeof uri === 'string' && uri.startsWith(`data:${kind}/`);
+}
 
 export type SavedAppData = {
   people: Person[];
@@ -65,7 +73,7 @@ function isAppData(value: unknown): value is SavedAppData {
   if (new Set(value.guardAssignments.map((item) => `${item.postId}\u0000${item.slotId}`)).size !== value.guardAssignments.length) return false;
   if (!rows(value.rosterEntries, (entry) => fields(entry, ['personId', 'attendance', 'reason', 'base']) && personIds.has(entry.personId) && ['נוכח', 'לא נוכח'].includes(entry.attendance as string)) || !unique(value.rosterEntries, 'personId')) return false;
   if (value.trackingValues !== undefined && (!Array.isArray(value.trackingValues) || !value.trackingValues.every((item) => typeof item === 'string'))) return false;
-  if (value.trackingEvents !== undefined && (!rows(value.trackingEvents, (event) => fields(event, ['id', 'personName', 'personId', 'date', 'time', 'value', 'details'])) || !unique(value.trackingEvents, 'id'))) return false;
+  if (value.trackingEvents !== undefined && (!rows(value.trackingEvents, (event) => fields(event, ['id', 'personName', 'personId', 'date', 'time', 'value', 'details']) && (event.kind === undefined || event.kind === 'שיפור' || event.kind === 'שימור') && validTrackingMedia(event.media)) || !unique(value.trackingEvents, 'id'))) return false;
   return rows(value.tasks, (task) => fields(task, ['id', 'title', 'due']) && typeof task.done === 'boolean' && ['דחופה', 'רגילה'].includes(task.urgency as string) && ['חשובה', 'רגילה'].includes(task.importance as string)) && unique(value.tasks, 'id');
 }
 

@@ -23,7 +23,7 @@ import { useFonts } from 'expo-font';
 import { DavidLibre_400Regular, DavidLibre_500Medium, DavidLibre_700Bold } from '@expo-google-fonts/david-libre';
 import * as ImagePicker from 'expo-image-picker';
 import { colors as C, radius, spacing } from './theme';
-import { createBackup, loadDeviceData, parseBackup, saveDeviceData, storageErrorMessage, checkDeviceStorage, type SavedAppData, type TrackingEvent, type LoadResult } from './deviceStorage';
+import { createBackup, loadDeviceData, parseBackup, saveDeviceData, storageErrorMessage, checkDeviceStorage, type SavedAppData, type TrackingEvent, type TrackingKind, type LoadResult } from './deviceStorage';
 import { personGroups, normalizedPersonName, getReadinessCandidates, assignReadinessPerson, reconcileReadinessPeople } from './peopleAndReadiness';
 import { normalizePersonalDate, displayPersonalDate, isValidPastDate, relationshipDuration, calendarKey, clampCalendarParts, type CalendarParts } from './personalDates';
 import { normalizePhotoFraming, photoFrameRect, PASSPORT_ASPECT_RATIO, type PhotoFraming } from './photoFraming';
@@ -31,7 +31,7 @@ import { prepareProfilePhoto } from './profilePhotoUri';
 import { makePeopleQuiz, type QuizQuestion } from './peopleQuiz';
 
 type DomainTab = 'medical' | 'welfare' | 'fitness' | 'education' | 'readiness';
-type Tab = 'home' | 'people' | 'guards' | 'roster' | 'tasks' | 'event' | 'journal' | DomainTab;
+type Tab = 'home' | 'people' | 'guards' | 'roster' | 'tasks' | 'journal' | DomainTab;
 export type Person = {
   id: string;
   name: string;
@@ -290,7 +290,7 @@ function SectionHeading({ title, action, onAction }: { title: string; action?: s
   );
 }
 
-type IconName = 'home' | 'people' | 'clock' | 'roster' | 'tasks' | 'search' | 'compass' | 'plus' | 'chevron' | 'chevronDown' | 'settings' | 'share' | 'check' | 'sparkle' | 'close' | 'profile' | 'calendar' | 'taskCircle' | 'fox' | 'medical' | 'welfare' | 'fitness' | 'education' | 'readiness' | 'shield';
+type IconName = 'camera' | 'home' | 'people' | 'clock' | 'roster' | 'tasks' | 'search' | 'compass' | 'plus' | 'chevron' | 'chevronDown' | 'settings' | 'share' | 'check' | 'sparkle' | 'close' | 'profile' | 'calendar' | 'taskCircle' | 'fox' | 'medical' | 'welfare' | 'fitness' | 'education' | 'readiness' | 'shield';
 const plannedDomains: { key: DomainTab; title: string; icon: IconName; description: string }[] = [
   { key: 'medical', title: 'רפואה', icon: 'medical', description: 'מעקב אחר מצב רפואי, טיפולים, תורים והמשך טיפול.' },
   { key: 'welfare', title: 'ת״ש', icon: 'welfare', description: 'תמונת מצב של האנשים שיש להם פירוט ת״ש בתיק האישי.' },
@@ -322,6 +322,7 @@ function AppIcon({ name, size = 20, color = C.ink, filled = false }: { name: Ico
   const stroke = { stroke: color, strokeWidth: 1.9, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, fill: 'none' };
   let shape: React.ReactNode;
   switch (name) {
+    case 'camera': shape = <><Path d="M3 7h4l2-3h6l2 3h4v13H3z" {...stroke} /><Circle cx={12} cy={13} r={3} {...stroke} /></>; break;
     case 'fox': shape = <><Path d="M3 3 8.5 6.5 12 5.5 15.5 6.5 21 3 20 13.5 12 21 4 13.5 3 3Z" {...stroke} /><Path d="m3 3 3.5 8L12 16l5.5-5L21 3M7.5 12h1M15.5 12h1" {...stroke} /><Path d="M10.5 16.3h3L12 18Z" fill={color} /></>; break;
     case 'medical': shape = <><Rect x="3.5" y="3.5" width="17" height="17" rx="4" {...stroke} /><Path d="M12 7.5v9M7.5 12h9" {...stroke} /></>; break;
     case 'welfare': shape = <><Path d="M12 12.5 7.8 8.6a2.8 2.8 0 0 1 4.2-3.7 2.8 2.8 0 0 1 4.2 3.7L12 12.5ZM3 15h3l3 2h5a1.5 1.5 0 0 1 0 3H9l-3-1H3M15.5 17l3.5-3a1.6 1.6 0 0 1 2 2.5L16 21H9" {...stroke} /></>; break;
@@ -461,6 +462,8 @@ function StoredApp({ stored }: { stored: LoadResult }) {
   const [timePicker, setTimePicker] = useState<{ slotId: string; part: 'start' | 'end'; value: string; target?: 'readiness' } | null>(null);
   const [rosterCopied, setRosterCopied] = useState(false);
   const [taskModalOpen, setTaskModalOpen] = useState(false);
+  const [trackingFormKey, setTrackingFormKey] = useState(0);
+  const [trackingNotice, setTrackingNotice] = useState(false);
   const [trackingEvents, setTrackingEvents] = useState(initialData?.trackingEvents ?? []);
   const [trackingValues, setTrackingValues] = useState(initialData?.trackingValues ?? []);
   const [clockTick, setClockTick] = useState(0);
@@ -966,10 +969,12 @@ function StoredApp({ stored }: { stored: LoadResult }) {
                   style={{ width: homeArtworkWidth, height: homeArtworkWidth * 394 / 1020 }} />
               </View>
 
-              <Pressable style={[styles.homeFeatureCard, { marginBottom: spacing.md }]} accessibilityRole="button" onPress={() => setTab('event')}>
-                <View style={styles.homeFeatureIcon}><AppIcon name="tasks" size={24} color={C.violetLight} /></View>
-                <Text style={styles.sectionTitle}>תיעוד אירוע</Text>
-              </Pressable>
+              <TrackingForm key={trackingFormKey} people={people} values={trackingValues} onJournal={() => setTab('journal')} onSave={(event) => {
+                setTrackingEvents((current) => [event, ...current]);
+                setTrackingFormKey((current) => current + 1);
+                setTrackingNotice(true);
+              }} />
+              {trackingNotice && <Text accessibilityLiveRegion="polite" style={styles.sheetIntro}>האירוע נוסף ליומן המעקב.</Text>}
 
               <SectionHeading title="מצב השמירות והכוננויות" action="פתיחת הלוח" onAction={openGuards} />
               <View style={[styles.card, styles.homeGuardCard]}>
@@ -1300,11 +1305,8 @@ function StoredApp({ stored }: { stored: LoadResult }) {
               </View>
             </>
           )}
-          {tab === 'event' && <TrackingForm people={people} values={trackingValues} onJournal={() => setTab('journal')} onSave={(event) => {
-            setTrackingEvents((current) => [event, ...current]);
-            setTab('journal');
-          }} />}
-          {tab === 'journal' && <TrackingJournal events={trackingEvents} values={trackingValues} onValuesChange={setTrackingValues} onNewEvent={() => setTab('event')} />}
+
+          {tab === 'journal' && <TrackingJournal events={trackingEvents} values={trackingValues} onValuesChange={setTrackingValues} onNewEvent={() => setTab('home')} onReset={() => { setTrackingEvents([]); setTrackingValues([]); setTrackingNotice(false); }} />}
           {tab === 'tasks' && (
             <>
               <PageTitle eyebrow="הדברים שלך" title="המשימות שלי" caption="מסודרות לפי דחיפות, חשיבות ומועד" />
@@ -1532,22 +1534,24 @@ function TaskRow({ task, onToggle, onChangeDue, last = false }: { task: TaskItem
   );
 }
 
-function TrackingAutocomplete({ label, options, selected, onSelect }: {
+function TrackingAutocomplete({ label, options, selected, onSelect, compact = false, hint }: {
   label: string;
   options: { id: string; name: string }[];
   selected: string;
+  compact?: boolean;
+  hint?: string;
   onSelect: (id: string) => void;
 }) {
   const [query, setQuery] = useState('');
   const matches = query.trim() && !selected ? options.filter(({ name }) => name.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 8) : [];
   return <View>
     <Text style={styles.formLabel}>{label}</Text>
-    <TextInput accessibilityLabel={label} style={styles.formInput} value={query} onChangeText={(text) => {
+    <TextInput accessibilityLabel={label} accessibilityHint={hint} style={compact ? styles.trackingInput : styles.formInput} value={options.find((option) => option.id === selected)?.name ?? (selected ? '' : query)} onChangeText={(text) => {
       setQuery(text);
       onSelect('');
     }} />
     {matches.map(({ id, name }) => <Pressable key={id} style={styles.navigationAction} accessibilityRole="button" onPress={() => {
-      setQuery(name);
+      setQuery('');
       onSelect(id);
     }}><Text style={styles.navigationActionText}>{name}</Text></Pressable>)}
     {!!query.trim() && !selected && !matches.length && <Text style={styles.sheetIntro}>אין התאמות</Text>}
@@ -1561,77 +1565,231 @@ function TrackingForm({ people, values, onJournal, onSave }: {
   onSave: (event: TrackingEvent) => void;
 }) {
   const [now] = useState(() => new Date());
-  const [date, setDate] = useState(() => calendarKey({ year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() }));
+  const [date, setDate] = useState(() => trackingDate(now));
   const [time, setTime] = useState(() => [now.getHours(), now.getMinutes()].map((part) => String(part).padStart(2, '0')).join(':'));
-  const [timeOpen, setTimeOpen] = useState(false);
+  const [picker, setPicker] = useState<'date' | 'time' | 'when' | 'kind' | null>(null);
   const [personId, setPersonId] = useState('');
   const [value, setValue] = useState('');
+  const [kind, setKind] = useState<TrackingKind>('שיפור');
   const [details, setDetails] = useState('');
+  const [media, setMedia] = useState<TrackingEvent['media']>();
+  const [mediaMenu, setMediaMenu] = useState(false);
+  const [mediaError, setMediaError] = useState('');
+  const [busy, setBusy] = useState(false);
   const person = people.find((item) => item.id === personId);
-  const canSave = !!(person && values.includes(value) && date && details.trim());
-  return <>
-    <PageTitle title="תיעוד אירוע" caption="האירוע יתווסף ליומן המעקב" />
-    <TrackingAutocomplete label="בחירת אדם" options={people} selected={personId} onSelect={setPersonId} />
-    {!people.length && <Text style={styles.sheetIntro}>כדי לתעד אירוע, הוסף אדם במסך ״אנשים״.</Text>}
-    {values.length ? <TrackingAutocomplete label="הערך שנפגע" options={values.map((name) => ({ id: name, name }))} selected={value} onSelect={setValue} />
-      : <Pressable style={styles.navigationAction} accessibilityRole="button" onPress={onJournal}><Text style={styles.navigationActionText}>הוספת ערכים ביומן המעקב</Text></Pressable>}
-    <DateField label="תאריך האירוע" value={date} onChange={setDate} pastOnly />
-    <Text style={styles.formLabel}>שעת האירוע</Text>
-    <Pressable accessibilityRole="button" accessibilityLabel="בחירת שעת האירוע" style={[styles.formInput, styles.dateFieldButton]} onPress={() => setTimeOpen(true)}>
-      <AppIcon name="clock" color={C.violetLight} /><Text style={{ color: C.ink }}>{time}</Text>
-    </Pressable>
-    {timeOpen && <TimePickerModal visible title="שעת האירוע" value={time} onClose={() => setTimeOpen(false)} onSave={(nextTime) => {
-      setTime(nextTime);
-      setTimeOpen(false);
-    }} />}
-    <Text style={styles.formLabel}>פירוט האירוע</Text>
-    <TextInput accessibilityLabel="פירוט האירוע" multiline style={[styles.formInput, { minHeight: 96, paddingTop: 12, textAlignVertical: 'top' }]} value={details} onChangeText={setDetails} />
+  const canSave = !!(person && values.includes(value) && date && details.trim() && !busy);
+
+  async function attachMedia(source: 'library' | 'image' | 'video') {
+    setMediaMenu(false);
+    if (Platform.OS === 'web' && source !== 'library') {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = source + '/*';
+      input.setAttribute('capture', 'environment');
+      input.onchange = () => { if (input.files?.[0]) void readMedia(input.files[0]); };
+      input.click();
+      return;
+    }
+    setMediaError('');
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images', 'videos'] });
+      if (!result.canceled) {
+        const asset = result.assets[0];
+        await readMedia(asset.file ?? await (await fetch(asset.uri)).blob());
+      }
+    } catch {
+      setMediaError('פתיחת הקובץ נכשלה. אפשר לנסות שוב.');
+    }
+  }
+
+  async function readMedia(blob: Blob) {
+    setBusy(true);
+    setMediaError('');
+    try {
+      if (blob.size > 10 * 1024 * 1024) {
+        setMediaError('אפשר לצרף קובץ עד 10 מגה־בייט.');
+        return;
+      }
+      const uri = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject();
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      const mediaKind = blob.type.startsWith('video/') ? 'video' : 'image';
+      if (!uri.startsWith(`data:${mediaKind}/`)) throw new Error('Unsupported media');
+      setMedia({ kind: mediaKind, uri });
+    } catch {
+      setMediaError('פתיחת הקובץ נכשלה. אפשר לנסות שוב.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <View style={styles.personStatusDetail}>
+    <Text style={styles.sectionTitle}>תיעוד אירוע</Text>
+    <View style={styles.trackingRow}>
+      <View style={styles.trackingCell}><TrackingAutocomplete label="אדם" options={people} selected={personId} onSelect={setPersonId} compact /></View>
+      <View style={styles.trackingCell}>
+        <Text style={styles.formLabel}>תאריך</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="עריכת תאריך ושעה" style={styles.trackingInput} onPress={() => setPicker('when')}>
+          <Text style={styles.trackingText}>{displayPersonalDate(date).slice(0, 5)}</Text>
+          <Text style={styles.trackingText}>{time}</Text>
+        </Pressable>
+      </View>
+      <View style={styles.trackingCell}>
+        {values.length ? <TrackingAutocomplete label="ערך" hint={kind === 'שימור' ? 'איזה ערך בא לידי ביטוי?' : 'איזה ערך נפגע?'} options={values.map((name) => ({ id: name, name }))} selected={value} onSelect={setValue} compact />
+          : <><Text style={styles.formLabel}>ערך</Text><Pressable accessibilityRole="button" style={styles.trackingInput} onPress={onJournal}><Text style={styles.trackingText}>הוספה</Text></Pressable></>}
+      </View>
+      <View style={styles.trackingCell}>
+        <Text style={styles.formLabel}>סוג</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="בחירת שיפור או שימור" style={styles.trackingInput} onPress={() => setPicker('kind')}><Text style={styles.trackingText}>{kind} ▾</Text></Pressable>
+      </View>
+    </View>
+    <Text style={styles.sheetIntro}>{kind === 'שימור' ? 'איזה ערך בא לידי ביטוי?' : 'איזה ערך נפגע?'}</Text>
+    <View style={styles.trackingRow}>
+      <TextInput accessibilityLabel="פירוט האירוע" placeholder="פירוט פרטי האירוע" placeholderTextColor={C.muted} multiline style={[styles.formInput, { flex: 1, minHeight: 88, paddingTop: 12, textAlignVertical: 'top' }]} value={details} onChangeText={setDetails} />
+      <Pressable accessibilityRole="button" accessibilityLabel="צירוף תמונה או סרטון" style={styles.closeButton} disabled={busy} onPress={() => setMediaMenu(true)}><AppIcon name="camera" color={C.violetLight} /></Pressable>
+    </View>
+    {mediaMenu && <Sheet visible onClose={() => setMediaMenu(false)}>
+      <Text style={styles.modalTitle}>תמונה או סרטון</Text>
+      <Pressable accessibilityRole="button" style={styles.navigationAction} onPress={() => attachMedia('library')}><Text style={styles.navigationActionText}>בחירה מהמכשיר</Text></Pressable>
+      {Platform.OS === 'web' && <>
+        <Pressable accessibilityRole="button" style={styles.navigationAction} onPress={() => attachMedia('image')}><Text style={styles.navigationActionText}>צילום תמונה</Text></Pressable>
+        <Pressable accessibilityRole="button" style={styles.navigationAction} onPress={() => attachMedia('video')}><Text style={styles.navigationActionText}>צילום סרטון</Text></Pressable>
+      </>}
+      <Pressable accessibilityRole="button" style={styles.navigationAction} onPress={() => setMediaMenu(false)}><Text style={styles.navigationActionText}>ביטול</Text></Pressable>
+    </Sheet>}
+    {busy && <Text style={styles.sheetIntro}>מכין את הקובץ…</Text>}
+    {!!mediaError && <Text style={styles.peopleDeleteText}>{mediaError}</Text>}
+    {media && <><TrackingMedia media={media} /><Pressable accessibilityRole="button" style={styles.navigationAction} onPress={() => setMedia(undefined)}><Text style={styles.navigationActionText}>הסרת הקובץ</Text></Pressable></>}
     <Pressable accessibilityRole="button" disabled={!canSave} style={[styles.primaryButton, !canSave && { opacity: 0.45 }]} onPress={() => {
       if (!canSave || !person) return;
-      onSave({ id: `event-${Date.now()}-${Math.random().toString(36).slice(2)}`, personId, personName: person.name, value, date, time, details: details.trim() });
+      onSave({ id: `event-${Date.now()}-${Math.random().toString(36).slice(2)}`, personId, personName: person.name, value, date, time, kind, details: details.trim(), media });
     }}><Text style={styles.primaryButtonText}>שמירת אירוע</Text></Pressable>
-  </>;
+    {picker === 'when' && <Sheet visible onClose={() => setPicker(null)}>
+      <Text style={styles.modalTitle}>תאריך ושעת האירוע</Text>
+      <Pressable style={styles.navigationAction} onPress={() => setPicker('date')}><Text style={styles.navigationActionText}>תאריך · {displayPersonalDate(date)}</Text></Pressable>
+      <Pressable style={styles.navigationAction} onPress={() => setPicker('time')}><Text style={styles.navigationActionText}>שעה · {time}</Text></Pressable>
+    </Sheet>}
+    {picker === 'date' && <DatePickerSheet label="תאריך האירוע" value={date} pastOnly onClose={() => setPicker(null)} onSave={(next) => { setDate(next); setPicker(null); }} />}
+    {picker === 'time' && <TimePickerModal visible title="שעת האירוע" value={time} onClose={() => setPicker(null)} onSave={(next) => { setTime(next); setPicker(null); }} />}
+    {picker === 'kind' && <Sheet visible onClose={() => setPicker(null)}>
+      <Text style={styles.modalTitle}>שיפור או שימור</Text>
+      {(['שיפור', 'שימור'] as const).map((item) => <Pressable key={item} style={styles.navigationAction} accessibilityRole="button" onPress={() => { setKind(item); setPicker(null); }}><Text style={styles.navigationActionText}>{item}</Text></Pressable>)}
+    </Sheet>}
+  </View>;
 }
 
-function TrackingJournal({ events, values, onValuesChange, onNewEvent }: {
+function trackingDate(date: Date) {
+  return calendarKey({ year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate() });
+}
+
+function TrackingMedia({ media }: { media: NonNullable<TrackingEvent['media']> }) {
+  if (media.kind === 'image') return <Image source={{ uri: media.uri }} style={styles.trackingMedia} resizeMode="contain" />;
+  if (Platform.OS === 'web') return React.createElement('video', { src: media.uri, controls: true, playsInline: true, preload: 'metadata', style: { width: '100%', maxHeight: 220 } });
+  return <Text style={styles.sheetIntro}>סרטון מצורף</Text>;
+}
+
+function TrackingJournal({ events, values, onValuesChange, onNewEvent, onReset }: {
   events: TrackingEvent[];
   values: string[];
   onValuesChange: (values: string[]) => void;
   onNewEvent: () => void;
+  onReset: () => void;
 }) {
   const [value, setValue] = useState('');
   const [editing, setEditing] = useState<string | null>(null);
+  const [panel, setPanel] = useState<'filters' | 'values' | 'reset' | null>(null);
+  const [person, setPerson] = useState('');
+  const [filterValue, setFilterValue] = useState('');
+  const [kind, setKind] = useState<'הכול' | TrackingKind>('הכול');
+  const [range, setRange] = useState<'הכול' | 'השבוע' | 'החודש' | 'טווח'>('הכול');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [expanded, setExpanded] = useState<string | null>(null);
   const name = value.trim();
   const canSave = !!name && !values.some((item) => item !== editing && item.toLowerCase() === name.toLowerCase());
-  const ordered = [...events].sort((a, b) => `${b.date}T${b.time}`.localeCompare(`${a.date}T${a.time}`));
+  const names = Array.from(new Map(events.map((event) => [event.personId, event.personName])), ([id, name]) => ({ id, name }));
+  const eventValues = [...new Set([...values, ...events.map((event) => event.value)])];
+  const today = new Date();
+  const weekStart = new Date(today.getFullYear(), today.getMonth(), today.getDate() - today.getDay());
+  const weekEnd = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 6);
+  const start = range === 'השבוע' ? trackingDate(weekStart) : range === 'החודש' ? trackingDate(new Date(today.getFullYear(), today.getMonth(), 1)) : range === 'טווח' ? from : '';
+  const end = range === 'השבוע' ? trackingDate(weekEnd) : range === 'החודש' ? trackingDate(new Date(today.getFullYear(), today.getMonth() + 1, 0)) : range === 'טווח' ? to : '';
+  const ordered = events.filter((event) =>
+    (!person || person === event.personId) && (!filterValue || filterValue === event.value)
+    && (kind === 'הכול' || kind === (event.kind ?? 'שיפור'))
+    && (!start || event.date >= start) && (!end || event.date <= end)
+  ).sort((a, b) => `${b.date}T${b.time}`.localeCompare(`${a.date}T${a.time}`));
+
+  function clearFilters() {
+    setPerson('');
+    setFilterValue('');
+    setKind('הכול');
+    setRange('הכול');
+    setFrom('');
+    setTo('');
+  }
+
   return <>
-    <PageTitle title="יומן מעקב" caption="אירועים ומאגר הערכים" />
+    <PageTitle title="יומן מעקב" caption={`${ordered.length} מתוך ${events.length} אירועים`} />
     <Pressable style={styles.primaryButton} accessibilityRole="button" onPress={onNewEvent}><Text style={styles.primaryButtonText}>תיעוד אירוע</Text></Pressable>
-    <Text style={styles.sectionTitle}>מאגר ערכים</Text>
-    {values.map((item) => <Pressable key={item} style={styles.navigationAction} accessibilityRole="button" accessibilityLabel={`עריכת הערך ${item}`} onPress={() => {
-      setEditing(item);
-      setValue(item);
-    }}><Text style={styles.navigationActionText}>{item}</Text></Pressable>)}
-    <Text style={styles.formLabel}>{editing === null ? 'ערך חדש' : 'עריכת ערך'}</Text>
-    <TextInput accessibilityLabel="שם הערך" value={value} onChangeText={setValue} style={styles.formInput} />
-    <Pressable accessibilityRole="button" disabled={!canSave} style={[styles.primaryButton, !canSave && { opacity: 0.45 }]} onPress={() => {
-      if (!canSave) return;
-      onValuesChange(editing === null ? [...values, name] : values.map((item) => item === editing ? name : item));
-      setEditing(null);
-      setValue('');
-    }}><Text style={styles.primaryButtonText}>{editing === null ? 'הוספת ערך' : 'שמירת ערך'}</Text></Pressable>
-    {editing !== null && <Pressable accessibilityRole="button" style={styles.navigationAction} onPress={() => {
-      setEditing(null);
-      setValue('');
-    }}><Text style={styles.navigationActionText}>ביטול עריכה</Text></Pressable>}
-    <Text style={styles.sectionTitle}>אירועים</Text>
-    {!ordered.length && <Text style={styles.sheetIntro}>עדיין אין אירועים ביומן.</Text>}
-    {ordered.map((event) => <View key={event.id} style={styles.personStatusDetail}>
-      <Text style={styles.formLabel}>{event.personName}</Text>
-      <Text style={styles.sheetIntro}>{displayPersonalDate(event.date)} · {event.time}</Text>
-      <Text style={styles.formLabel}>הערך שנפגע · {event.value}</Text>
-      <Text style={{ color: C.ink }}>{event.details}</Text>
-    </View>)}
+    <View style={styles.trackingRow}>
+      {(['סינון', 'מאגר ערכים', 'איפוס'] as const).map((label, index) => {
+        const target = (['filters', 'values', 'reset'] as const)[index];
+        return <Pressable key={label} style={[styles.trackingInput, styles.trackingCell]} accessibilityRole="button" onPress={() => setPanel(panel === target ? null : target)}><Text style={styles.trackingText}>{label}</Text></Pressable>;
+      })}
+    </View>
+    <ChoiceGroup label="תקופה" options={['הכול', 'השבוע', 'החודש', 'טווח']} value={range} onChange={setRange} />
+    {range === 'טווח' && <><DateField label="מתאריך" value={from} onChange={setFrom} /><DateField label="עד תאריך" value={to} onChange={setTo} />{from && to && from > to && <Text style={styles.peopleDeleteText}>תאריך הסיום צריך להיות אחרי תאריך ההתחלה.</Text>}</>}
+    {panel === 'filters' && <View style={styles.personStatusDetail}>
+      <TrackingAutocomplete label="אדם" options={names} selected={person} onSelect={setPerson} />
+      <TrackingAutocomplete label="ערך" options={eventValues.map((item) => ({ id: item, name: item }))} selected={filterValue} onSelect={setFilterValue} />
+      <ChoiceGroup label="סוג אירוע" options={['הכול', 'שיפור', 'שימור']} value={kind} onChange={setKind} />
+    </View>}
+    {(person || filterValue || kind !== 'הכול' || range !== 'הכול') && <Pressable style={styles.navigationAction} accessibilityRole="button" onPress={clearFilters}><Text style={styles.navigationActionText}>ניקוי סינון</Text></Pressable>}
+    {panel === 'values' && <View style={styles.personStatusDetail}>
+      <Text style={styles.sectionTitle}>מאגר ערכים</Text>
+      {values.map((item) => <Pressable key={item} style={styles.navigationAction} accessibilityRole="button" accessibilityLabel={`עריכת הערך ${item}`} onPress={() => { setEditing(item); setValue(item); }}><Text style={styles.navigationActionText}>{item}</Text></Pressable>)}
+      <Text style={styles.formLabel}>{editing === null ? 'ערך חדש' : 'עריכת ערך'}</Text>
+      <TextInput accessibilityLabel="שם הערך" value={value} onChangeText={setValue} style={styles.formInput} />
+      <Pressable accessibilityRole="button" disabled={!canSave} style={[styles.primaryButton, !canSave && { opacity: 0.45 }]} onPress={() => {
+        if (!canSave) return;
+        onValuesChange(editing === null ? [...values, name] : values.map((item) => item === editing ? name : item));
+        setEditing(null);
+        setValue('');
+      }}><Text style={styles.primaryButtonText}>{editing === null ? 'הוספת ערך' : 'שמירת ערך'}</Text></Pressable>
+      {editing !== null && <Pressable accessibilityRole="button" style={styles.navigationAction} onPress={() => { setEditing(null); setValue(''); }}><Text style={styles.navigationActionText}>ביטול עריכה</Text></Pressable>}
+    </View>}
+    {panel === 'reset' && <Sheet visible onClose={() => setPanel(null)}>
+      <Text style={styles.modalTitle}>לאפס את יומן המעקב?</Text>
+      <Text style={styles.sheetIntro}>הפעולה תמחק {events.length} אירועים ו־{values.length} ערכים, כולל הקבצים המצורפים ליומן.</Text>
+      <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => {
+        onReset();
+        clearFilters();
+        setValue('');
+        setEditing(null);
+        setExpanded(null);
+        setPanel(null);
+      }}><Text style={styles.primaryButtonText}>כן, לאפס את היומן</Text></Pressable>
+      <Pressable accessibilityRole="button" style={styles.navigationAction} onPress={() => setPanel(null)}><Text style={styles.navigationActionText}>ביטול</Text></Pressable>
+    </Sheet>}
+    {!ordered.length && <Text style={styles.sheetIntro}>{events.length ? 'אין אירועים שמתאימים לסינון.' : 'עדיין אין אירועים ביומן.'}</Text>}
+    {ordered.map((event) => {
+      const eventKind = event.kind ?? 'שיפור';
+      const open = expanded === event.id;
+      return <View key={event.id} style={styles.personStatusDetail}>
+        <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setExpanded(open ? null : event.id)}>
+          <View style={styles.trackingRow}>
+            <Text style={[styles.formLabel, { flex: 1 }]}>{event.personName}</Text>
+            <Text style={{ color: eventKind === 'שימור' ? '#84DAB0' : '#F0AD74' }}>{eventKind}</Text>
+          </View>
+          <Text style={styles.sheetIntro}>{displayPersonalDate(event.date)} · {event.time} · {event.value}</Text>
+        </Pressable>
+        {open && <><Text style={{ color: C.ink, marginBottom: 8 }}>{event.details}</Text>{event.media && <TrackingMedia media={event.media} />}</>}
+      </View>;
+    })}
   </>;
 }
 
@@ -2439,12 +2597,11 @@ const styles = StyleSheet.create({
   greetingBlock: { alignItems: 'flex-end', marginHorizontal: spacing.xl, marginBottom: spacing.sm },
   greetingSmall: { color: C.muted, fontSize: 12, marginBottom: 5 },
   greetingTitle: { color: C.ink, fontSize: 29, fontWeight: '700', letterSpacing: -0.4, marginBottom: 3 },
-  homeFeatureRow: { flexDirection: 'row-reverse', gap: 9, marginBottom: spacing.md },
-  homeFeatureCard: { flex: 1, minWidth: 0, minHeight: 119, alignItems: 'center', justifyContent: 'center', backgroundColor: '#151019', borderRadius: 18, borderWidth: 1, borderColor: '#38283F', paddingHorizontal: 6, paddingVertical: 12, shadowColor: '#7135A6', shadowOffset: { width: 0, height: 7 }, shadowOpacity: 0.14, shadowRadius: 17, elevation: 2 },
-  homeFeatureIcon: { width: 38, height: 34, alignItems: 'center', justifyContent: 'center', marginBottom: 9 },
-  homeFeatureTitle: { color: C.ink, fontSize: 12, fontWeight: '700', textAlign: 'center', lineHeight: 15 },
-  homeFeatureValue: { color: C.muted, fontSize: 11, fontWeight: '600', textAlign: 'center', marginTop: 4, lineHeight: 14 },
-  homeFeatureNote: { color: C.muted, opacity: 0.8, fontSize: 9, fontWeight: '500', textAlign: 'center', marginTop: 2, lineHeight: 12 },
+  trackingRow: { flexDirection: 'row-reverse', alignItems: 'flex-start', gap: 6, marginTop: 10 },
+  trackingCell: { flex: 1, minWidth: 0 },
+  trackingInput: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 5, backgroundColor: C.background, borderRadius: 8, borderWidth: 1, borderColor: C.line, color: C.ink, fontSize: 16 },
+  trackingText: { color: C.ink, textAlign: 'center', fontSize: 13 },
+  trackingMedia: { width: '100%', height: 180 },
   homeTimePill: { flexDirection: 'row-reverse', alignItems: 'center', gap: 3 },
   homeLtrTime: { writingDirection: 'ltr' },
   homeProgressCard: { backgroundColor: C.card, borderRadius: 18, borderWidth: 1, borderColor: C.line, padding: spacing.md, marginBottom: spacing.lg, shadowColor: '#000000', shadowOffset: { width: 0, height: 7 }, shadowOpacity: 0.16, shadowRadius: 15, elevation: 2 },

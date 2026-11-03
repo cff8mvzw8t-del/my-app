@@ -23,7 +23,7 @@ import { useFonts } from 'expo-font';
 import { DavidLibre_400Regular, DavidLibre_500Medium, DavidLibre_700Bold } from '@expo-google-fonts/david-libre';
 import * as ImagePicker from 'expo-image-picker';
 import { colors as C, radius, spacing } from './theme';
-import { createBackup, loadDeviceData, parseBackup, saveDeviceData, storageErrorMessage, checkDeviceStorage, type SavedAppData, type LoadResult } from './deviceStorage';
+import { createBackup, loadDeviceData, parseBackup, saveDeviceData, storageErrorMessage, checkDeviceStorage, type SavedAppData, type TrackingEvent, type LoadResult } from './deviceStorage';
 import { personGroups, normalizedPersonName, getReadinessCandidates, assignReadinessPerson, reconcileReadinessPeople } from './peopleAndReadiness';
 import { normalizePersonalDate, displayPersonalDate, isValidPastDate, relationshipDuration, calendarKey, clampCalendarParts, type CalendarParts } from './personalDates';
 import { normalizePhotoFraming, photoFrameRect, PASSPORT_ASPECT_RATIO, type PhotoFraming } from './photoFraming';
@@ -31,7 +31,7 @@ import { prepareProfilePhoto } from './profilePhotoUri';
 import { makePeopleQuiz, type QuizQuestion } from './peopleQuiz';
 
 type DomainTab = 'medical' | 'welfare' | 'fitness' | 'education' | 'readiness';
-type Tab = 'home' | 'people' | 'guards' | 'roster' | 'tasks' | DomainTab;
+type Tab = 'home' | 'people' | 'guards' | 'roster' | 'tasks' | 'event' | 'journal' | DomainTab;
 export type Person = {
   id: string;
   name: string;
@@ -461,14 +461,15 @@ function StoredApp({ stored }: { stored: LoadResult }) {
   const [timePicker, setTimePicker] = useState<{ slotId: string; part: 'start' | 'end'; value: string; target?: 'readiness' } | null>(null);
   const [rosterCopied, setRosterCopied] = useState(false);
   const [taskModalOpen, setTaskModalOpen] = useState(false);
-  const [assistantInfoOpen, setAssistantInfoOpen] = useState(false);
+  const [trackingEvents, setTrackingEvents] = useState(initialData?.trackingEvents ?? []);
+  const [trackingValues, setTrackingValues] = useState(initialData?.trackingValues ?? []);
   const [clockTick, setClockTick] = useState(0);
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDue, setTaskDue] = useState('היום');
   const [taskUrgency, setTaskUrgency] = useState<'דחופה' | 'רגילה'>('רגילה');
   const [taskImportance, setTaskImportance] = useState<'חשובה' | 'רגילה'>('רגילה');
 
-  const savedData = useMemo<SavedAppData>(() => ({ people, guardPosts, guardTimeSlots, guardAssignments, readinessShifts, readinessFighterLabels, rosterEntries, absenceReasons, baseOptions, tasks }), [people, guardPosts, guardTimeSlots, guardAssignments, readinessShifts, readinessFighterLabels, rosterEntries, absenceReasons, baseOptions, tasks]);
+  const savedData = useMemo<SavedAppData>(() => ({ people, guardPosts, guardTimeSlots, guardAssignments, readinessShifts, readinessFighterLabels, rosterEntries, absenceReasons, baseOptions, tasks, trackingEvents, trackingValues }), [people, guardPosts, guardTimeSlots, guardAssignments, readinessShifts, readinessFighterLabels, rosterEntries, absenceReasons, baseOptions, tasks, trackingEvents, trackingValues]);
   const attemptedPhotoRecovery = React.useRef(new Set<string>());
   React.useEffect(() => {
     if (Platform.OS !== 'web' || !savingAllowed) return;
@@ -633,6 +634,8 @@ function StoredApp({ stored }: { stored: LoadResult }) {
     setAbsenceReasons(pendingRestore.absenceReasons);
     setBaseOptions(pendingRestore.baseOptions);
     setTasks(pendingRestore.tasks);
+    setTrackingEvents(pendingRestore.trackingEvents ?? []);
+    setTrackingValues(pendingRestore.trackingValues ?? []);
     setBulkReason(pendingRestore.absenceReasons[0] ?? '');
     setBulkBase(pendingRestore.baseOptions[0] ?? '');
     setSelectedPeopleIds([]);
@@ -943,7 +946,7 @@ function StoredApp({ stored }: { stored: LoadResult }) {
           opacity: screenProgress,
           transform: [{ translateY: screenProgress.interpolate({ inputRange: [0.94, 1], outputRange: [6, 0] }) }],
         }]}>
-        <ScrollView contentContainerStyle={[styles.scrollContent, tab === 'home' && styles.homeScrollContent]} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={[styles.scrollContent, tab === 'home' && styles.homeScrollContent]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {tab === 'home' && (
             <>
               <View style={styles.homeHero}>
@@ -963,41 +966,10 @@ function StoredApp({ stored }: { stored: LoadResult }) {
                   style={{ width: homeArtworkWidth, height: homeArtworkWidth * 394 / 1020 }} />
               </View>
 
-              <View style={styles.homeFeatureRow}>
-                <Pressable
-                  style={({ pressed }) => [styles.homeFeatureCard, pressed && styles.pressedControl]}
-                  onPress={() => setAssistantInfoOpen(true)}
-                  accessibilityRole="button"
-                  accessibilityLabel="מידע על חיבור עתידי לאסיסטנט"
-                >
-                  <View style={styles.homeFeatureIcon}><AppIcon name="sparkle" size={22} color={C.violetLight} /></View>
-                  <Text style={styles.homeFeatureTitle}>אסיסטנט</Text>
-                  <Text style={styles.homeFeatureValue}>בתכנון</Text>
-                  <Text style={styles.homeFeatureNote}>חיבור עתידי</Text>
-                </Pressable>
-                <Pressable
-                  style={({ pressed }) => [styles.homeFeatureCard, pressed && styles.pressedControl]}
-                  onPress={() => setTab('roster')}
-                  accessibilityRole="button"
-                  accessibilityLabel="פתיחת מצב נוכחות"
-                >
-                  <View style={styles.homeFeatureIcon}><AppIcon name="people" size={22} color={C.violetLight} /></View>
-                  <Text style={styles.homeFeatureTitle}>מצב נוכחות</Text>
-                  <Text style={styles.homeFeatureValue}>{presentRosterCount}/{rosterRows.length} נוכחים</Text>
-                  <Text style={styles.homeFeatureNote}>עדכון מהמצבה</Text>
-                </Pressable>
-                <Pressable
-                  style={({ pressed }) => [styles.homeFeatureCard, pressed && styles.pressedControl]}
-                  onPress={openGuards}
-                  accessibilityRole="button"
-                  accessibilityLabel="פתיחת מצב השמירות והכוננויות"
-                >
-                  <View style={styles.homeFeatureIcon}><AppIcon name="clock" size={22} color={C.violetLight} /></View>
-                  <Text style={styles.homeFeatureTitle}>שמירה הבאה</Text>
-                  <Text style={styles.homeFeatureValue}>{nextGuardSlot ? getShiftTimes(nextGuardSlot.time).start : '—'}</Text>
-                  <Text style={styles.homeFeatureNote}>{nextGuardSlot ? (nextIsTomorrow ? 'מחר' : 'היום') : 'לא הוגדרה'}</Text>
-                </Pressable>
-              </View>
+              <Pressable style={[styles.homeFeatureCard, { marginBottom: spacing.md }]} accessibilityRole="button" onPress={() => setTab('event')}>
+                <View style={styles.homeFeatureIcon}><AppIcon name="tasks" size={24} color={C.violetLight} /></View>
+                <Text style={styles.sectionTitle}>תיעוד אירוע</Text>
+              </Pressable>
 
               <SectionHeading title="מצב השמירות והכוננויות" action="פתיחת הלוח" onAction={openGuards} />
               <View style={[styles.card, styles.homeGuardCard]}>
@@ -1328,6 +1300,11 @@ function StoredApp({ stored }: { stored: LoadResult }) {
               </View>
             </>
           )}
+          {tab === 'event' && <TrackingForm people={people} values={trackingValues} onJournal={() => setTab('journal')} onSave={(event) => {
+            setTrackingEvents((current) => [event, ...current]);
+            setTab('journal');
+          }} />}
+          {tab === 'journal' && <TrackingJournal events={trackingEvents} values={trackingValues} onValuesChange={setTrackingValues} onNewEvent={() => setTab('event')} />}
           {tab === 'tasks' && (
             <>
               <PageTitle eyebrow="הדברים שלך" title="המשימות שלי" caption="מסודרות לפי דחיפות, חשיבות ומועד" />
@@ -1376,6 +1353,10 @@ function StoredApp({ stored }: { stored: LoadResult }) {
           </Pressable>)}
           <Pressable style={({ pressed }) => [styles.domainMenuCard, pressed && styles.pressedControl]} onPress={() => { setQuickActionsOpen(false); setTab('tasks'); }} accessibilityRole="button"><AppIcon name="taskCircle" color={C.navigationPurple} size={26} /><Text style={styles.domainMenuText}>משימות</Text></Pressable>
         </View>
+        <Pressable style={styles.navigationAction} onPress={() => { setQuickActionsOpen(false); setTab('journal'); }} accessibilityRole="button">
+          <AppIcon name="education" color={C.navigationPurple} size={24} />
+          <Text style={styles.navigationActionText}>יומן מעקב</Text>
+        </Pressable>
         <Text style={styles.formLabel}>פעולות</Text>
         <Pressable style={styles.navigationAction} onPress={() => { setQuickActionsOpen(false); setPeopleQuizOpen(true); }} accessibilityRole="button">
           <AppIcon name="sparkle" color={C.navigationPurple} size={24} />
@@ -1437,11 +1418,7 @@ function StoredApp({ stored }: { stored: LoadResult }) {
         <Pressable style={[styles.primaryButton, styles.peopleDeleteButton]} onPress={deleteSelectedPeople}><Text style={styles.peopleDeleteText}>כן, למחוק</Text></Pressable>
         <Pressable style={styles.primaryButton} onPress={() => setDeletePeopleOpen(false)}><Text style={styles.primaryButtonText}>ביטול</Text></Pressable>
       </Sheet>
-      <Sheet visible={assistantInfoOpen} onClose={() => setAssistantInfoOpen(false)}>
-        <View style={styles.modalHeader}><Text style={styles.modalTitle}>האסיסטנט שלך</Text><Pressable onPress={() => setAssistantInfoOpen(false)} style={styles.closeButton} accessibilityLabel="סגירת חלון האסיסטנט"><AppIcon name="close" size={15} color={C.muted} /></Pressable></View>
-        <Text style={styles.sheetIntro}>כאן נוכל לחבר בהמשך עוזר AI לבחירתך. כרגע זהו אזור תצוגה בלבד; החיבור וההרשאות ייקבעו בנפרד.</Text>
-        <Pressable style={styles.primaryButton} onPress={() => setAssistantInfoOpen(false)}><Text style={styles.primaryButtonText}>הבנתי</Text></Pressable>
-      </Sheet>
+
       <GuardModal
         shift={editingGuard}
         onClose={() => setEditingGuard(null)}
@@ -1553,6 +1530,109 @@ function TaskRow({ task, onToggle, onChangeDue, last = false }: { task: TaskItem
       {dateOpen && <DatePickerSheet label="תאריך יעד" value={task.due} pastOnly={false} onClose={() => setDateOpen(false)} onSave={(date) => { onChangeDue(displayPersonalDate(date)); setDateOpen(false); }} />}
     </View>
   );
+}
+
+function TrackingAutocomplete({ label, options, selected, onSelect }: {
+  label: string;
+  options: { id: string; name: string }[];
+  selected: string;
+  onSelect: (id: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const matches = query.trim() && !selected ? options.filter(({ name }) => name.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 8) : [];
+  return <View>
+    <Text style={styles.formLabel}>{label}</Text>
+    <TextInput accessibilityLabel={label} style={styles.formInput} value={query} onChangeText={(text) => {
+      setQuery(text);
+      onSelect('');
+    }} />
+    {matches.map(({ id, name }) => <Pressable key={id} style={styles.navigationAction} accessibilityRole="button" onPress={() => {
+      setQuery(name);
+      onSelect(id);
+    }}><Text style={styles.navigationActionText}>{name}</Text></Pressable>)}
+    {!!query.trim() && !selected && !matches.length && <Text style={styles.sheetIntro}>אין התאמות</Text>}
+  </View>;
+}
+
+function TrackingForm({ people, values, onJournal, onSave }: {
+  people: Person[];
+  values: string[];
+  onJournal: () => void;
+  onSave: (event: TrackingEvent) => void;
+}) {
+  const [now] = useState(() => new Date());
+  const [date, setDate] = useState(() => calendarKey({ year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() }));
+  const [time, setTime] = useState(() => [now.getHours(), now.getMinutes()].map((part) => String(part).padStart(2, '0')).join(':'));
+  const [timeOpen, setTimeOpen] = useState(false);
+  const [personId, setPersonId] = useState('');
+  const [value, setValue] = useState('');
+  const [details, setDetails] = useState('');
+  const person = people.find((item) => item.id === personId);
+  const canSave = !!(person && values.includes(value) && date && details.trim());
+  return <>
+    <PageTitle title="תיעוד אירוע" caption="האירוע יתווסף ליומן המעקב" />
+    <TrackingAutocomplete label="בחירת אדם" options={people} selected={personId} onSelect={setPersonId} />
+    {!people.length && <Text style={styles.sheetIntro}>כדי לתעד אירוע, הוסף אדם במסך ״אנשים״.</Text>}
+    {values.length ? <TrackingAutocomplete label="הערך שנפגע" options={values.map((name) => ({ id: name, name }))} selected={value} onSelect={setValue} />
+      : <Pressable style={styles.navigationAction} accessibilityRole="button" onPress={onJournal}><Text style={styles.navigationActionText}>הוספת ערכים ביומן המעקב</Text></Pressable>}
+    <DateField label="תאריך האירוע" value={date} onChange={setDate} pastOnly />
+    <Text style={styles.formLabel}>שעת האירוע</Text>
+    <Pressable accessibilityRole="button" accessibilityLabel="בחירת שעת האירוע" style={[styles.formInput, styles.dateFieldButton]} onPress={() => setTimeOpen(true)}>
+      <AppIcon name="clock" color={C.violetLight} /><Text style={{ color: C.ink }}>{time}</Text>
+    </Pressable>
+    {timeOpen && <TimePickerModal visible title="שעת האירוע" value={time} onClose={() => setTimeOpen(false)} onSave={(nextTime) => {
+      setTime(nextTime);
+      setTimeOpen(false);
+    }} />}
+    <Text style={styles.formLabel}>פירוט האירוע</Text>
+    <TextInput accessibilityLabel="פירוט האירוע" multiline style={[styles.formInput, { minHeight: 96, paddingTop: 12, textAlignVertical: 'top' }]} value={details} onChangeText={setDetails} />
+    <Pressable accessibilityRole="button" disabled={!canSave} style={[styles.primaryButton, !canSave && { opacity: 0.45 }]} onPress={() => {
+      if (!canSave || !person) return;
+      onSave({ id: `event-${Date.now()}-${Math.random().toString(36).slice(2)}`, personId, personName: person.name, value, date, time, details: details.trim() });
+    }}><Text style={styles.primaryButtonText}>שמירת אירוע</Text></Pressable>
+  </>;
+}
+
+function TrackingJournal({ events, values, onValuesChange, onNewEvent }: {
+  events: TrackingEvent[];
+  values: string[];
+  onValuesChange: (values: string[]) => void;
+  onNewEvent: () => void;
+}) {
+  const [value, setValue] = useState('');
+  const [editing, setEditing] = useState<string | null>(null);
+  const name = value.trim();
+  const canSave = !!name && !values.some((item) => item !== editing && item.toLowerCase() === name.toLowerCase());
+  const ordered = [...events].sort((a, b) => `${b.date}T${b.time}`.localeCompare(`${a.date}T${a.time}`));
+  return <>
+    <PageTitle title="יומן מעקב" caption="אירועים ומאגר הערכים" />
+    <Pressable style={styles.primaryButton} accessibilityRole="button" onPress={onNewEvent}><Text style={styles.primaryButtonText}>תיעוד אירוע</Text></Pressable>
+    <Text style={styles.sectionTitle}>מאגר ערכים</Text>
+    {values.map((item) => <Pressable key={item} style={styles.navigationAction} accessibilityRole="button" accessibilityLabel={`עריכת הערך ${item}`} onPress={() => {
+      setEditing(item);
+      setValue(item);
+    }}><Text style={styles.navigationActionText}>{item}</Text></Pressable>)}
+    <Text style={styles.formLabel}>{editing === null ? 'ערך חדש' : 'עריכת ערך'}</Text>
+    <TextInput accessibilityLabel="שם הערך" value={value} onChangeText={setValue} style={styles.formInput} />
+    <Pressable accessibilityRole="button" disabled={!canSave} style={[styles.primaryButton, !canSave && { opacity: 0.45 }]} onPress={() => {
+      if (!canSave) return;
+      onValuesChange(editing === null ? [...values, name] : values.map((item) => item === editing ? name : item));
+      setEditing(null);
+      setValue('');
+    }}><Text style={styles.primaryButtonText}>{editing === null ? 'הוספת ערך' : 'שמירת ערך'}</Text></Pressable>
+    {editing !== null && <Pressable accessibilityRole="button" style={styles.navigationAction} onPress={() => {
+      setEditing(null);
+      setValue('');
+    }}><Text style={styles.navigationActionText}>ביטול עריכה</Text></Pressable>}
+    <Text style={styles.sectionTitle}>אירועים</Text>
+    {!ordered.length && <Text style={styles.sheetIntro}>עדיין אין אירועים ביומן.</Text>}
+    {ordered.map((event) => <View key={event.id} style={styles.personStatusDetail}>
+      <Text style={styles.formLabel}>{event.personName}</Text>
+      <Text style={styles.sheetIntro}>{displayPersonalDate(event.date)} · {event.time}</Text>
+      <Text style={styles.formLabel}>הערך שנפגע · {event.value}</Text>
+      <Text style={{ color: C.ink }}>{event.details}</Text>
+    </View>)}
+  </>;
 }
 
 function Sheet({ visible, onClose, children }: { visible: boolean; onClose: () => void; children: React.ReactNode }) {

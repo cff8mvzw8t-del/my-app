@@ -2,6 +2,8 @@ import type { Person, GuardPost, GuardTimeSlot, GuardAssignment, RosterEntry, Ta
 import { normalizePersonalDate } from './personalDates';
 import { isPhotoFraming } from './photoFraming';
 
+export type TrackingEvent = { id: string; personName: string; personId: string; date: string; time: string; value: string; details: string };
+
 export type SavedAppData = {
   people: Person[];
   guardPosts: GuardPost[];
@@ -13,6 +15,8 @@ export type SavedAppData = {
   absenceReasons: string[];
   baseOptions: string[];
   tasks: TaskItem[];
+  trackingEvents?: TrackingEvent[];
+  trackingValues?: string[];
 };
 
 export const STORAGE_KEY = 'personal-control-app:data:v1';
@@ -60,6 +64,8 @@ function isAppData(value: unknown): value is SavedAppData {
   if (!rows(value.guardAssignments, (assignment) => fields(assignment, ['postId', 'slotId', 'personId']) && personIds.has(assignment.personId) && postIds.has(assignment.postId) && slotIds.has(assignment.slotId))) return false;
   if (new Set(value.guardAssignments.map((item) => `${item.postId}\u0000${item.slotId}`)).size !== value.guardAssignments.length) return false;
   if (!rows(value.rosterEntries, (entry) => fields(entry, ['personId', 'attendance', 'reason', 'base']) && personIds.has(entry.personId) && ['נוכח', 'לא נוכח'].includes(entry.attendance as string)) || !unique(value.rosterEntries, 'personId')) return false;
+  if (value.trackingValues !== undefined && (!Array.isArray(value.trackingValues) || !value.trackingValues.every((item) => typeof item === 'string'))) return false;
+  if (value.trackingEvents !== undefined && (!rows(value.trackingEvents, (event) => fields(event, ['id', 'personName', 'personId', 'date', 'time', 'value', 'details'])) || !unique(value.trackingEvents, 'id'))) return false;
   return rows(value.tasks, (task) => fields(task, ['id', 'title', 'due']) && typeof task.done === 'boolean' && ['דחופה', 'רגילה'].includes(task.urgency as string) && ['חשובה', 'רגילה'].includes(task.importance as string)) && unique(value.tasks, 'id');
 }
 

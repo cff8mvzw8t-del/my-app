@@ -1,7 +1,7 @@
 import type { Person, ReadinessShift } from './App';
 
 export const personGroups = [
-  { key: 'lone', label: 'חיילים בודדים' },
+  { key: 'lone', label: 'חיילים עצמאיים' },
   { key: 'married', label: 'נשואים' },
   { key: 'other', label: 'השאר' },
 ] as const;

@@ -49,7 +49,12 @@
     function offerUpdate() {
       if (!registration.waiting) return;
       show('גרסה חדשה זמינה. אפשר לעדכן כשסיימת לערוך.', () => {
-        if (!confirm('לעדכן ולפתוח מחדש את האפליקציה? סיים עריכה פתוחה לפני העדכון.')) return;
+        const state = document.documentElement.dataset.appSaveState;
+        if (state === 'saving') { show('המידע עדיין נשמר. המתן לסיום השמירה ואז לחץ עדכון.', offerUpdate); return; }
+        const prompt = state && state !== 'saved'
+          ? 'השמירה במכשיר לא הושלמה. יש להוריד גיבוי לפני העדכון. להמשיך רק אם כבר שמרת קובץ גיבוי?'
+          : 'לעדכן ולפתוח מחדש את האפליקציה? סיים עריכה פתוחה לפני העדכון.';
+        if (!confirm(prompt)) return;
         requestedUpdate = true;
         registration.waiting?.postMessage({ type: 'ACTIVATE_UPDATE' });
       });

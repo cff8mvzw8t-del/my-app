@@ -10,6 +10,7 @@
     "test:pwa": "node --test scripts/pwa.test.mjs",
     "test:dates": "node --test scripts/personal-dates.test.mjs",
     "test:photos": "node --test scripts/photo-framing.test.mjs",
+    "test:storage": "node --test scripts/device-storage.test.mjs",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web"

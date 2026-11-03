@@ -24,7 +24,7 @@ import { useFonts } from 'expo-font';
 import { DavidLibre_400Regular, DavidLibre_500Medium, DavidLibre_700Bold } from '@expo-google-fonts/david-libre';
 import * as ImagePicker from 'expo-image-picker';
 import { colors as C, radius, spacing } from './theme';
-import { createBackup, loadDeviceData, parseBackup, saveDeviceData, type SavedAppData } from './deviceStorage';
+import { createBackup, loadDeviceData, parseBackup, saveDeviceData, storageErrorMessage, checkDeviceStorage, type SavedAppData, type LoadResult } from './deviceStorage';
 import { personGroups, normalizedPersonName, getReadinessCandidates, assignReadinessPerson, reconcileReadinessPeople } from './peopleAndReadiness';
 import { normalizePersonalDate, displayPersonalDate, isValidPastDate, relationshipDuration, calendarKey, clampCalendarParts, type CalendarParts } from './personalDates';
 import { normalizePhotoFraming, photoFrameRect, PASSPORT_ASPECT_RATIO, type PhotoFraming } from './photoFraming';
@@ -389,10 +389,24 @@ function Pill({ label, tone = 'green' }: { label: string; tone?: 'green' | 'oran
 }
 
 export default function App() {
-  const [stored] = useState(() => loadDeviceData());
-  const initialData = stored.kind === 'ready' ? stored.data : undefined;
+  const [stored, setStored] = useState<LoadResult | null>(null);
+  React.useEffect(() => {
+    let active = true;
+    loadDeviceData().then((result) => { if (active) setStored(result); }).catch(() => { if (active) setStored({ kind: 'unavailable' }); });
+    return () => { active = false; };
+  }, []);
+  if (!stored) return <View style={{ flex: 1, backgroundColor: C.background, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: C.ink }}>טוען את המידע מהמכשיר…</Text></View>;
+  return <StoredApp stored={stored} />;
+}
+
+function StoredApp({ stored }: { stored: LoadResult }) {
+  const initialData = stored.kind !== 'unavailable' ? stored.data : undefined;
   const [savingAllowed, setSavingAllowed] = useState(stored.kind === 'ready');
-  const [saveState, setSaveState] = useState<'saved' | 'error' | 'blocked' | 'unavailable'>(stored.kind === 'ready' ? 'saved' : stored.kind === 'error' ? 'blocked' : 'unavailable');
+  const [saveState, setSaveState] = useState<'saving' | 'saved' | 'error' | 'blocked' | 'unavailable'>(stored.kind === 'ready' ? 'saved' : stored.kind === 'error' ? 'blocked' : 'unavailable');
+  const [saveError, setSaveError] = useState('');
+  const [restoreBusy, setRestoreBusy] = useState(false);
+  const [storageCheckBusy, setStorageCheckBusy] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [backupOpen, setBackupOpen] = useState(false);
   const [quickActionsOpen, setQuickActionsOpen] = useState(false);
   const [backupMessage, setBackupMessage] = useState('');
@@ -463,13 +477,18 @@ export default function App() {
   }, [people, savingAllowed]);
   React.useEffect(() => {
     if (!savingAllowed) return;
-    try {
-      saveDeviceData(savedData);
-      setSaveState('saved');
-    } catch {
-      setSaveState('error');
-    }
+    let active = true;
+    setSaveState('saving');
+    saveDeviceData(savedData).then(() => {
+      if (active) { setSaveState('saved'); setSaveError(''); setLastSavedAt(Date.now()); }
+    }).catch((error) => {
+      if (active) { setSaveState('error'); setSaveError(storageErrorMessage(error)); }
+    });
+    return () => { active = false; };
   }, [savedData, savingAllowed]);
+  React.useEffect(() => {
+    if (Platform.OS === 'web') document.documentElement.dataset.appSaveState = restoreBusy ? 'saving' : saveState;
+  }, [saveState, restoreBusy]);
 
   React.useEffect(() => {
     if (Platform.OS !== 'web') return;
@@ -537,6 +556,29 @@ export default function App() {
     }
   }
 
+  async function saveNow() {
+    if (!savingAllowed || saveState === 'saving') return;
+    setSaveState('saving');
+    try {
+      await saveDeviceData(savedData);
+      setSaveState('saved'); setSaveError(''); setLastSavedAt(Date.now());
+      setBackupMessage('המידע נשמר בהצלחה במכשיר.');
+    } catch (error) {
+      const message = storageErrorMessage(error);
+      setSaveState('error'); setSaveError(message); setBackupMessage(message);
+    }
+  }
+
+  async function runStorageCheck() {
+    if (storageCheckBusy) return;
+    setStorageCheckBusy(true);
+    try {
+      await checkDeviceStorage();
+      setBackupMessage('בדיקת האחסון עברה בהצלחה. אפשר לשמור מידע במכשיר הזה.');
+    } catch (error) { setBackupMessage(storageErrorMessage(error)); }
+    finally { setStorageCheckBusy(false); }
+  }
+
   function chooseBackup() {
     if (Platform.OS !== 'web') return;
     const input = document.createElement('input');
@@ -561,13 +603,15 @@ export default function App() {
     input.click();
   }
 
-  function restoreBackup() {
-    if (!pendingRestore) return;
+  async function restoreBackup() {
+    if (!pendingRestore || restoreBusy) return;
+    setRestoreBusy(true);
     try {
       // Write first: a full device or blocked storage must not discard the current screen's data.
-      saveDeviceData(pendingRestore);
-    } catch {
-      setBackupMessage('אין אפשרות לשמור במכשיר כרגע. השחזור לא בוצע והמידע הקיים לא השתנה.');
+      await saveDeviceData(pendingRestore);
+    } catch (error) {
+      setBackupMessage(`${storageErrorMessage(error)} השחזור לא בוצע והמידע הקיים לא השתנה.`);
+      setRestoreBusy(false);
       return;
     }
     setPeople(pendingRestore.people);
@@ -598,6 +642,9 @@ export default function App() {
     setPendingRestore(null);
     setSavingAllowed(true);
     setSaveState('saved');
+    setSaveError('');
+    setRestoreBusy(false);
+    setLastSavedAt(Date.now());
     setBackupMessage('הגיבוי שוחזר ונשמר במכשיר.');
   }
 
@@ -1286,8 +1333,8 @@ export default function App() {
         </Animated.View>
 
         {saveState !== 'saved' && <Pressable style={styles.storageBar} onPress={() => setBackupOpen(true)} accessibilityRole="button" accessibilityLabel="מצב שמירה, גיבוי ושחזור">
-          <Text accessibilityLiveRegion="polite" style={[styles.storageBarText, styles.peopleDeleteText]}>
-            {saveState === 'blocked' ? 'לא ניתן לפתוח את השמירה · פרטים ושחזור' : saveState === 'unavailable' ? 'השמירה במכשיר אינה זמינה · פרטים' : 'השמירה נכשלה · פתח לגיבוי'}
+          <Text accessibilityLiveRegion="polite" style={[styles.storageBarText, saveState !== 'saving' && styles.peopleDeleteText]}>
+            {saveState === 'saving' ? 'שומר את השינויים במכשיר…' : saveState === 'blocked' ? 'לא ניתן לפתוח את השמירה · פרטים ושחזור' : saveState === 'unavailable' ? 'השמירה במכשיר אינה זמינה · פרטים' : 'השמירה נכשלה · פתח לגיבוי'}
           </Text>
         </Pressable>}
         <View nativeID="app-bottom-navigation" style={styles.tabBar}>
@@ -1323,28 +1370,40 @@ export default function App() {
         <Text style={styles.formLabel}>פעולות</Text>
         <Pressable style={styles.navigationAction} onPress={() => { setQuickActionsOpen(false); beginNewPerson(); }} accessibilityRole="button"><AppIcon name="people" color={C.navigationPurple} size={24} /><Text style={styles.navigationActionText}>הוספת אדם</Text></Pressable>
         <Pressable style={styles.navigationAction} onPress={() => { setQuickActionsOpen(false); setTaskModalOpen(true); }} accessibilityRole="button"><AppIcon name="tasks" color={C.navigationPurple} size={24} /><Text style={styles.navigationActionText}>הוספת משימה</Text></Pressable>
-        <Pressable style={styles.navigationAction} onPress={() => { setQuickActionsOpen(false); setBackupOpen(true); }} accessibilityRole="button"><AppIcon name="share" color={C.navigationPurple} size={24} /><View><Text style={styles.navigationActionText}>גיבוי ושחזור</Text><Text style={styles.navigationActionHint}>{saveState === 'saved' ? 'השינויים נשמרים במכשיר הזה' : 'בדיקת מצב השמירה'}</Text></View></Pressable>
+        <Pressable style={styles.navigationAction} onPress={() => { setQuickActionsOpen(false); setBackupOpen(true); }} accessibilityRole="button" accessibilityLabel="שמירת מידע וגיבויים"><AppIcon name="share" color={C.navigationPurple} size={24} /><View><Text style={styles.navigationActionText}>שמירת מידע וגיבויים</Text><Text style={styles.navigationActionHint}>{saveState === 'saved' ? 'השינויים נשמרים במכשיר הזה' : saveState === 'saving' ? 'שומר את השינויים…' : 'בדיקת מצב השמירה'}</Text></View></Pressable>
         </ScrollView>
       </Sheet>
       <Sheet visible={backupOpen} onClose={() => { setBackupOpen(false); setPendingRestore(null); }}>
         <ScrollView style={styles.personSheetScroll} keyboardShouldPersistTaps="handled">
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>שמירה, גיבוי ושחזור</Text>
+            <Text style={styles.modalTitle}>שמירת מידע וגיבויים</Text>
             <Pressable style={styles.closeButton} onPress={() => { setBackupOpen(false); setPendingRestore(null); }} accessibilityLabel="סגירת חלון הגיבוי"><AppIcon name="close" size={15} /></Pressable>
           </View>
-          <Text style={styles.backupExplanation}>המידע נשמר אוטומטית בדפדפן שבמכשיר הזה. פתיחה באותו דפדפן ובאותה כתובת תחזיר את המידע ששמרת. יש להשתמש בגלישה רגילה; מידע בגלישה פרטית עלול להימחק בסגירה.</Text>
-          <Text style={styles.backupExplanation}>לפני החלפת כתובת התצוגה הזמנית, מעבר למכשיר אחר או ניקוי נתוני הדפדפן, הורד גיבוי. בכתובת החדשה אפשר לשחזר אותו.</Text>
+          <View style={styles.personStatusDetail}>
+            <Text style={styles.formLabel}>{saveState === 'saved' ? 'המידע נשמר במכשיר' : saveState === 'saving' ? 'שומר את השינויים…' : 'נדרשת בדיקת שמירה'}</Text>
+            {lastSavedAt !== null && <Text style={styles.backupExplanation}>שמירה אחרונה: {new Intl.DateTimeFormat('he-IL', { hour: '2-digit', minute: '2-digit' }).format(lastSavedAt)}</Text>}
+            <Text style={styles.backupExplanation}>{people.length} אנשים · {people.filter(person => !!person.photoUri).length} תמונות · {tasks.length} משימות</Text>
+          </View>
+          <Text style={styles.backupExplanation}>המידע והתמונות נשמרים אוטומטית במכשיר הזה, גם לשימוש ללא אינטרנט. המידע אינו מסונכרן למכשירים אחרים.</Text>
+          <Text style={styles.backupExplanation}>שמור מדי פעם קובץ גיבוי ב״קבצים״ באייפון. לפני מחיקת האפליקציה, ניקוי נתוני Safari או מעבר למכשיר אחר, הורד גיבוי עדכני.</Text>
           {saveState === 'blocked' && <Text style={styles.peopleDeleteText}>לא הצלחתי לקרוא את השמירה הקיימת. לא דרסתי אותה. אפשר לייצא את המקור ולשחזר קובץ גיבוי תקין.</Text>}
-          {saveState === 'error' && <Text style={styles.peopleDeleteText}>השינוי האחרון לא נשמר. ייתכן שהאחסון מלא או שהדפדפן חוסם שמירה. הורד גיבוי לפני יציאה.</Text>}
-          {saveState === 'unavailable' && <Text style={styles.peopleDeleteText}>השמירה הזו זמינה בגרסת הדפדפן. גרסת התקנה תצטרך אחסון נפרד לפני שימוש קבוע.</Text>}
+          {saveState === 'saving' && <Text style={styles.backupExplanation}>השמירה מתבצעת כעת. המתן לאישור לפני סגירה או עדכון.</Text>}
+          {saveState === 'error' && <Text style={styles.peopleDeleteText}>{saveError || 'השינוי האחרון לא נשמר. הורד גיבוי לפני יציאה.'}</Text>}
+          {saveState === 'unavailable' && <Text style={styles.peopleDeleteText}>לא ניתן לגשת לאחסון במכשיר כרגע. הורד גיבוי של המידע הפתוח לפני סגירה.</Text>}
+          <View style={styles.peopleActionRow}>
+            <Pressable accessibilityRole="button" accessibilityLabel="שמירה עכשיו" disabled={!savingAllowed || saveState === 'saving' || restoreBusy} style={styles.peopleActionButton} onPress={saveNow}><Text style={styles.peopleActionText}>שמירה עכשיו</Text></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="בדיקת אחסון" disabled={storageCheckBusy} style={styles.peopleActionButton} onPress={runStorageCheck}><Text style={styles.peopleActionText}>{storageCheckBusy ? 'בודק אחסון…' : 'בדיקת אחסון'}</Text></Pressable>
+          </View>
           {Platform.OS === 'web' && <>
             <Pressable style={styles.primaryButton} onPress={() => downloadBackup()}><Text style={styles.primaryButtonText}>הורדת גיבוי של המידע</Text></Pressable>
+            <Pressable accessibilityRole="button" style={[styles.peopleActionButton, { marginTop: 10 }]} onPress={() => downloadBackup(createBackup({ ...savedData, people: people.map(({ photoUri, photoFraming, ...person }) => person) }), 'my-roster-backup-without-photos')}><Text style={styles.peopleActionText}>הורדת עותק נוסף ללא תמונות</Text></Pressable>
+            <Text style={styles.backupExplanation}>העותק הנוסף קטן יותר ואינו משנה את התמונות באפליקציה.</Text>
             {stored.kind === 'error' && stored.raw !== undefined && <Pressable style={styles.peopleActionButton} onPress={() => downloadBackup(stored.raw, 'original-save')}><Text style={styles.peopleActionText}>ייצוא השמירה המקורית לבדיקה</Text></Pressable>}
             {!pendingRestore ? <Pressable style={[styles.peopleActionButton, { marginTop: 10 }]} onPress={chooseBackup}><Text style={styles.peopleActionText}>בחירת קובץ לשחזור</Text></Pressable> : <View style={styles.personStatusDetail}>
               <Text style={styles.formLabel}>להחליף את המידע הקיים בגיבוי?</Text>
               <Text style={styles.backupExplanation}>הגיבוי כולל {pendingRestore.people.length} אנשים ו־{pendingRestore.tasks.length} משימות. השחזור יחליף גם את המצבה, השמירות וההגדרות. אפשר להוריד קודם גיבוי של המידע הנוכחי.</Text>
-              <Pressable style={styles.primaryButton} onPress={restoreBackup}><Text style={styles.primaryButtonText}>כן, לשחזר ולהחליף</Text></Pressable>
-              <Pressable style={[styles.peopleActionButton, { marginTop: 10 }]} onPress={() => setPendingRestore(null)}><Text style={styles.peopleActionText}>ביטול השחזור</Text></Pressable>
+              <Pressable disabled={restoreBusy} style={[styles.primaryButton, restoreBusy && styles.primaryButtonDisabled]} onPress={restoreBackup}><Text style={styles.primaryButtonText}>{restoreBusy ? 'שומר את הגיבוי במכשיר…' : 'כן, לשחזר ולהחליף'}</Text></Pressable>
+              <Pressable disabled={restoreBusy} style={[styles.peopleActionButton, { marginTop: 10 }]} onPress={() => setPendingRestore(null)}><Text style={styles.peopleActionText}>ביטול השחזור</Text></Pressable>
             </View>}
           </>}
           {!!backupMessage && <Text style={[styles.backupExplanation, { marginTop: 12 }]} accessibilityLiveRegion="polite">{backupMessage}</Text>}

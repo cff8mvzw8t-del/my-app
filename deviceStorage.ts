@@ -17,7 +17,10 @@ export type SavedAppData = {
 
 export const STORAGE_KEY = 'personal-control-app:data:v1';
 type Store = Pick<Storage, 'getItem' | 'setItem'>;
-type LoadResult = { kind: 'ready'; data?: SavedAppData } | { kind: 'error'; raw?: string } | { kind: 'unavailable' };
+export type LoadResult = { kind: 'ready'; data?: SavedAppData } | { kind: 'error'; raw?: string; data?: SavedAppData } | { kind: 'unavailable' };
+export type DatabaseStore = { read: () => Promise<string | null>; write: (raw: string) => Promise<void>; available?: () => boolean };
+export const DATABASE_NAME = 'personal-control-app';
+export const DATABASE_STORE = 'app-data';
 
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === 'string');
@@ -74,21 +77,133 @@ function browserStorage(): Store | undefined {
   return typeof window !== 'undefined' ? window.localStorage : undefined;
 }
 
-export function loadDeviceData(getStore: () => Store | undefined = browserStorage): LoadResult {
-  let raw: string | null = null;
+function databaseOperation(mode: 'readonly' | 'readwrite', raw?: string, key = STORAGE_KEY, remove = false): Promise<string | null> {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') { reject(new Error('Database unavailable')); return; }
+    let database: IDBDatabase | undefined;
+    let transaction: IDBTransaction | undefined;
+    let settled = false;
+    const finish = (error?: unknown, value: string | null = null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      database?.close();
+      if (error) reject(error); else resolve(value);
+    };
+    const timer = setTimeout(() => {
+      try { transaction?.abort(); } catch { /* Already completed. */ }
+      finish(new Error('Storage timeout'));
+    }, 8000);
+    let request: IDBOpenDBRequest;
+    try { request = indexedDB.open(DATABASE_NAME, 1); } catch (error) { finish(error); return; }
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(DATABASE_STORE)) request.result.createObjectStore(DATABASE_STORE);
+    };
+    request.onerror = () => finish(request.error || new Error('Database unavailable'));
+    request.onblocked = () => finish(new Error('Database blocked'));
+    request.onsuccess = () => {
+      database = request.result;
+      if (settled) { database.close(); return; }
+      try {
+        transaction = database.transaction(DATABASE_STORE, mode);
+        const store = transaction.objectStore(DATABASE_STORE);
+        const operation = mode === 'readwrite' ? remove ? store.delete(key) : store.put(raw, key) : store.get(key);
+        let result: string | null = null;
+        operation.onsuccess = () => { if (mode === 'readonly') result = typeof operation.result === 'string' ? operation.result : null; };
+        transaction.oncomplete = () => finish(undefined, result);
+        transaction.onabort = () => finish(transaction?.error || new Error('Storage transaction failed'));
+        transaction.onerror = () => finish(transaction?.error || new Error('Storage transaction failed'));
+      } catch (error) { finish(error); }
+    };
+  });
+}
+
+const browserDatabase: DatabaseStore = {
+  available: () => typeof indexedDB !== 'undefined',
+  read: () => databaseOperation('readonly'),
+  write: async (raw) => { await databaseOperation('readwrite', raw); },
+};
+
+let lastSaveTime = 0;
+let saveQueue: Promise<void> = Promise.resolve();
+
+export async function loadDeviceData(getStore: () => Store | undefined = browserStorage, database: DatabaseStore = browserDatabase): Promise<LoadResult> {
+  let localRaw: string | null = null;
+  let localAvailable = false;
+  let databaseAvailable = false;
+  let databaseRaw: string | null = null;
+  try { const store = getStore(); if (store) { localRaw = store.getItem(STORAGE_KEY); localAvailable = true; } } catch { /* Try the database. */ }
+  try { databaseRaw = await database.read(); databaseAvailable = true; } catch { /* Keep legacy storage usable. */ }
+  const valid: { data: SavedAppData; savedAt: number; generation: number; database: boolean }[] = [];
+  let invalidRaw: string | undefined;
+  for (const [raw, fromDatabase] of [[localRaw, false], [databaseRaw, true]] as const) {
+    if (raw === null) continue;
+    try {
+      const data = parseBackup(raw);
+      const envelope = JSON.parse(raw);
+      const date = Date.parse(envelope.savedAt);
+      valid.push({ data, savedAt: Number.isFinite(date) ? date : 0, generation: envelope.persistence === 2 ? 2 : 0, database: fromDatabase });
+    } catch { invalidRaw = raw; }
+  }
+  if (!databaseAvailable && database.available?.() !== false) {
+    // An unreadable database is not an empty database: do not auto-save an old
+    // legacy mirror over a potentially newer collection when it recovers.
+    if (localAvailable) return { kind: 'error', raw: localRaw ?? undefined, data: valid[0]?.data };
+    return { kind: 'unavailable' };
+  }
+  valid.sort((a, b) => b.generation - a.generation || b.savedAt - a.savedAt || Number(b.database) - Number(a.database));
+  if (invalidRaw !== undefined) return { kind: 'error', raw: invalidRaw, data: valid[0]?.data };
+  if (valid.length) {
+    lastSaveTime = Math.max(lastSaveTime, valid[0].savedAt);
+    return { kind: 'ready', data: valid[0].data };
+  }
+  // Never replace malformed saved records with seed data.
+  if (localAvailable || databaseAvailable) return { kind: 'ready' };
+  return { kind: 'unavailable' };
+}
+
+export function storageErrorMessage(error: unknown): string {
+  const name = error && typeof error === 'object' && 'name' in error ? String(error.name) : '';
+  if (name === 'QuotaExceededError') return 'אין מספיק שטח פנוי לשמירה במכשיר. הורד גיבוי של המידע לפני סגירה.';
+  if (name === 'SecurityError' || name === 'NotAllowedError') return 'הדפדפן חוסם שמירה במכשיר. הורד גיבוי לפני סגירה ובדוק שאינך בגלישה פרטית.';
+  return 'השמירה במכשיר לא הושלמה. הורד גיבוי לפני סגירה ונסה שוב.';
+}
+
+export async function checkDeviceStorage(): Promise<void> {
+  const key = `${STORAGE_KEY}:check:${Date.now()}`;
+  const value = 'storage-check';
   try {
-    const store = getStore();
-    if (!store) return { kind: 'unavailable' };
-    raw = store.getItem(STORAGE_KEY);
-    return raw === null ? { kind: 'ready' } : { kind: 'ready', data: parseBackup(raw) };
-  } catch {
-    // Keep the original bytes untouched when loading or validating fails.
-    return { kind: 'error', raw: raw ?? undefined };
+    await databaseOperation('readwrite', value, key);
+    if (await databaseOperation('readonly', undefined, key) !== value) throw new Error('Storage verification failed');
+  } finally {
+    await databaseOperation('readwrite', undefined, key, true).catch(() => {});
   }
 }
 
-export function saveDeviceData(data: SavedAppData, getStore: () => Store | undefined = browserStorage): void {
-  const store = getStore();
-  if (!store) throw new Error('Device storage unavailable');
-  store.setItem(STORAGE_KEY, createBackup(data));
+export function saveDeviceData(data: SavedAppData, getStore: () => Store | undefined = browserStorage, database: DatabaseStore = browserDatabase): Promise<void> {
+  // Snapshot immediately, then serialize writes so a slow earlier save cannot
+  // overwrite a newer edit or a confirmed restore.
+  lastSaveTime = Math.max(Date.now(), lastSaveTime + 1);
+  const raw = JSON.stringify({ version: 1, persistence: 2, savedAt: new Date(lastSaveTime).toISOString(), data });
+  const write = async () => {
+    let databaseSaved = false;
+    let localSaved = false;
+    let databaseError: unknown;
+    let localError: unknown;
+    try { await database.write(raw); databaseSaved = true; } catch (error) { databaseError = error; }
+    // Small snapshots also retain a legacy mirror. Large photo collections go
+    // to IndexedDB, without being constrained by localStorage's small quota.
+    if (!databaseSaved || raw.length <= 1000000) {
+      try {
+        const store = getStore();
+        if (!store) throw new Error('Device storage unavailable');
+        store.setItem(STORAGE_KEY, raw);
+        localSaved = true;
+      } catch (error) { localError = error; }
+    }
+    if (!databaseSaved && !localSaved) throw localError || databaseError || new Error('Device storage unavailable');
+  };
+  const result = saveQueue.then(write);
+  saveQueue = result.catch(() => {});
+  return result;
 }

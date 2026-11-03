@@ -1104,7 +1104,7 @@ function StoredApp({ stored }: { stored: LoadResult }) {
                         <Text style={styles.personCardName} numberOfLines={1}>{person.name}</Text>
                         {person.isCommander && <Pill label="מפקד" tone="blue" />}
                         <Text style={styles.personCardRole} numberOfLines={1}>{person.role || 'תפקיד לא צוין'}</Text>
-                        <Text style={styles.personCardCity} numberOfLines={2}>{person.city.trim() || 'מקום מגורים לא צוין'}</Text>
+                        <Text style={styles.personCardCity} numberOfLines={2}>{person.city.trim() ? `📍 ${person.city.trim()}` : 'מקום מגורים לא צוין'}</Text>
                         <Pill label={person.status} tone={person.status === 'במסגרת' ? 'green' : 'orange'} />
                         {!!person.statusTags.length && (
                           <View style={styles.statusTagRow}>

@@ -3,7 +3,6 @@ import {
   Animated,
   Alert,
   Image,
-  ImageBackground,
   Modal,
   PanResponder,
   Platform,
@@ -291,7 +290,7 @@ function SectionHeading({ title, action, onAction }: { title: string; action?: s
   );
 }
 
-type IconName = 'home' | 'people' | 'clock' | 'roster' | 'tasks' | 'search' | 'plus' | 'chevron' | 'chevronDown' | 'settings' | 'share' | 'check' | 'sparkle' | 'close' | 'profile' | 'calendar' | 'taskCircle' | 'fox' | 'medical' | 'welfare' | 'fitness' | 'education' | 'readiness' | 'shield';
+type IconName = 'home' | 'people' | 'clock' | 'roster' | 'tasks' | 'search' | 'compass' | 'plus' | 'chevron' | 'chevronDown' | 'settings' | 'share' | 'check' | 'sparkle' | 'close' | 'profile' | 'calendar' | 'taskCircle' | 'fox' | 'medical' | 'welfare' | 'fitness' | 'education' | 'readiness' | 'shield';
 const plannedDomains: { key: DomainTab; title: string; icon: IconName; description: string }[] = [
   { key: 'medical', title: 'רפואה', icon: 'medical', description: 'מעקב אחר מצב רפואי, טיפולים, תורים והמשך טיפול.' },
   { key: 'welfare', title: 'ת״ש', icon: 'welfare', description: 'תמונת מצב של האנשים שיש להם פירוט ת״ש בתיק האישי.' },
@@ -331,6 +330,7 @@ function AppIcon({ name, size = 20, color = C.ink, filled = false }: { name: Ico
     case 'readiness': shape = <><Circle cx="12" cy="12" r="9" {...stroke} /><Circle cx="12" cy="12" r="4.5" {...stroke} /><Path d="M12 10v4M10 12h4M18.5 5.5 22 2" {...stroke} /></>; break;
     case 'shield': shape = <><Path d="m12 3 8 3v6c0 4-4.5 7.2-8 9-3.5-1.8-8-5-8-9V6l8-3Z" {...stroke} /><Path d="m8.5 12 2.5 2.5 4.5-5" {...stroke} /></>; break;
     case 'search': shape = <><Circle cx="10.5" cy="10.5" r="6.5" {...stroke} /><Path d="m15.5 15.5 5 5" {...stroke} /></>; break;
+    case 'compass': shape = <><Circle cx="12" cy="12" r="9" {...stroke} /><Path d="m16 8-2.8 5.2L8 16l2.8-5.2L16 8Z" {...stroke} /></>; break;
     case 'home': shape = <Path d="m3 10 9-7 9 7v9a2 2 0 0 1-2 2h-4v-6H9v6H5a2 2 0 0 1-2-2z" {...stroke} fill={filled ? color : 'none'} />; break;
     case 'profile': shape = <><Circle cx="12" cy="7" r="3.5" {...stroke} /><Path d="M5 21v-2a7 7 0 0 1 14 0v2" {...stroke} /></>; break;
     case 'calendar': shape = <><Rect x="3.5" y="5" width="17" height="16" rx="2" {...stroke} /><Path d="M7.5 2.5v5M16.5 2.5v5M4 11h16" {...stroke} /></>; break;
@@ -406,6 +406,7 @@ export default function App() {
 }
 
 function StoredApp({ stored }: { stored: LoadResult }) {
+  const homeArtworkWidth = Math.min(useWindowDimensions().width, 560);
   const initialData = stored.kind !== 'unavailable' ? stored.data : undefined;
   const [savingAllowed, setSavingAllowed] = useState(stored.kind === 'ready');
   const [saveState, setSaveState] = useState<'saving' | 'saved' | 'error' | 'blocked' | 'unavailable'>(stored.kind === 'ready' ? 'saved' : stored.kind === 'error' ? 'blocked' : 'unavailable');
@@ -945,26 +946,22 @@ function StoredApp({ stored }: { stored: LoadResult }) {
         <ScrollView contentContainerStyle={[styles.scrollContent, tab === 'home' && styles.homeScrollContent]} showsVerticalScrollIndicator={false}>
           {tab === 'home' && (
             <>
-              <ImageBackground source={require('./assets/home-mountains-v1.png')} resizeMode="stretch" imageStyle={styles.homeMountainImage} style={styles.homeHero}>
-                <View pointerEvents="none" style={styles.homeMountainFade}>
-                  {Array.from({ length: 24 }, (_, index) => {
-                    const alpha = ((index + 1) / 24).toFixed(2);
-                    return <View key={index} style={[styles.homeMountainFadeStep, { backgroundColor: `rgba(0,0,0,${alpha})` }]} />;
-                  })}
-                </View>
+              <View style={styles.homeHero}>
                 <View style={styles.topBar}>
                   <Text style={styles.homeMotto}>איתך לעד</Text>
                   <View style={styles.topBarSpacer} />
                   <Pressable style={({ pressed }) => [styles.topIconButton, pressed && styles.pressedControl]} onPress={() => setTab('people')} accessibilityRole="button" accessibilityLabel="פתיחת רשימת אנשים">
-                    <AppIcon name="search" color={C.ink} />
+                    <AppIcon name="compass" color="#CEB2E9" />
                   </Pressable>
                 </View>
                 <View style={styles.greetingBlock}>
                   <Text style={styles.greetingSmall}>{formatToday()}</Text>
                   <Text style={styles.greetingTitle}>{formatGreeting()}</Text>
-                  <Text style={styles.greetingSubtitle}>תמונת מצב יומית, במקום אחד</Text>
+                  <Text style={styles.homeQuote}>{'מַיִם רַבִּים לֹא יוּכְלוּ לְכַבּוֹת אֶת הָאַהֲבָה\nוּנְהָרוֹת לֹא יִשְׁטְפוּהָ'}</Text>
                 </View>
-              </ImageBackground>
+                <Image source={require('./assets/home-dragon-mountain.png')} resizeMode="stretch"
+                  style={{ width: homeArtworkWidth, height: homeArtworkWidth * 394 / 1020 }} />
+              </View>
 
               <View style={styles.homeFeatureRow}>
                 <Pressable
@@ -2352,19 +2349,16 @@ const styles = StyleSheet.create({
   screenTransition: { flex: 1, minHeight: 0 },
   scrollContent: { paddingHorizontal: spacing.xl, paddingTop: spacing.md, paddingBottom: spacing.xxl },
   homeScrollContent: { flexGrow: 1, justifyContent: 'space-between', paddingBottom: spacing.md },
-  homeHero: { position: 'relative', overflow: 'hidden', minHeight: 165, marginHorizontal: -spacing.xl, paddingHorizontal: spacing.xl, marginBottom: spacing.md, backgroundColor: C.background },
-  homeMountainImage: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%', opacity: 1 },
-  homeMountainFade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 78, flexDirection: 'column' },
-  homeMountainFadeStep: { flex: 1 },
+  homeHero: { marginHorizontal: -spacing.xl, marginBottom: spacing.md, paddingBottom: spacing.md, backgroundColor: C.background },
+  homeQuote: { marginTop: 4, color: C.ink, fontSize: 17, lineHeight: 24, textAlign: 'right' },
   homeMotto: { color: '#E3D2EF', fontSize: 14, lineHeight: 17, marginTop: 1 },
-  topBar: { flexDirection: 'row-reverse', alignItems: 'center', marginBottom: spacing.xl },
+  topBar: { flexDirection: 'row-reverse', alignItems: 'center', marginHorizontal: spacing.xl, marginBottom: spacing.xl },
   topBarSpacer: { flex: 1 },
   topIconButton: { width: 40, height: 40, borderRadius: radius.pill, backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.line },
   topIcon: { color: C.ink, fontSize: 26, lineHeight: 30 },
-  greetingBlock: { alignItems: 'flex-end', marginBottom: spacing.lg },
+  greetingBlock: { alignItems: 'flex-end', marginHorizontal: spacing.xl, marginBottom: spacing.sm },
   greetingSmall: { color: C.muted, fontSize: 12, marginBottom: 5 },
   greetingTitle: { color: C.ink, fontSize: 29, fontWeight: '700', letterSpacing: -0.4, marginBottom: 3 },
-  greetingSubtitle: { color: C.muted, fontSize: 14 },
   homeFeatureRow: { flexDirection: 'row-reverse', gap: 9, marginBottom: spacing.md },
   homeFeatureCard: { flex: 1, minWidth: 0, minHeight: 119, alignItems: 'center', justifyContent: 'center', backgroundColor: '#151019', borderRadius: 18, borderWidth: 1, borderColor: '#38283F', paddingHorizontal: 6, paddingVertical: 12, shadowColor: '#7135A6', shadowOffset: { width: 0, height: 7 }, shadowOpacity: 0.14, shadowRadius: 17, elevation: 2 },
   homeFeatureIcon: { width: 38, height: 34, alignItems: 'center', justifyContent: 'center', marginBottom: 9 },

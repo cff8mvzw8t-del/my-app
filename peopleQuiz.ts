@@ -62,11 +62,10 @@ export function makePeopleQuiz(people: Person[]): QuizQuestion[] {
 
   const groups = Object.values(pools).map(shuffle);
   const round: QuizQuestion[] = [];
-  while (round.length < 10 && groups.some((group) => group.length)) {
+  while (groups.some((group) => group.length)) {
     for (const group of shuffle(groups)) {
       const question = group.pop();
       if (question) round.push(question);
-      if (round.length === 10) break;
     }
   }
   return round;

@@ -1581,6 +1581,8 @@ const quizPrompts = {
 
 function PeopleQuiz({ people, onClose }: { people: Person[]; onClose: () => void }) {
   const [round, setRound] = useState(() => makePeopleQuiz(people));
+  const [finished, setFinished] = useState(false);
+  const [practice, setPractice] = useState<QuizQuestion[] | null>(null);
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<boolean[]>([]);
   const [input, setInput] = useState('');
@@ -1588,7 +1590,9 @@ function PeopleQuiz({ people, onClose }: { people: Person[]; onClose: () => void
   const question = round[index];
   const answered = answers.length > index;
   const unavailable = question === unavailableQuestion;
-  const missed = round.filter((_, position) => answers[position] === false);
+  const missed = [...new Map(round.slice(0, answers.length)
+    .filter((_, position) => answers[position] === false)
+    .map((item) => [JSON.stringify([item.kind, item.person.id]), item])).values()];
 
   function answer(value: string) {
     if (!question || unavailable || !value.trim()) return;
@@ -1596,12 +1600,22 @@ function PeopleQuiz({ people, onClose }: { people: Person[]; onClose: () => void
     setAnswers((current) => current.length === index ? [...current, correct] : current);
   }
 
-  function start(questions: QuizQuestion[]) {
-    setRound(questions);
+  function start(practiceQuestions: QuizQuestion[] | null = null) {
+    setPractice(practiceQuestions);
+    setRound(practiceQuestions ?? makePeopleQuiz(people));
+    setFinished(false);
     setAnswers([]);
     setIndex(0);
     setInput('');
     setUnavailableQuestion(null);
+  }
+
+  function nextQuestion() {
+    setInput('');
+    if (index + 1 === round.length) {
+      setRound([...round, ...(practice ?? makePeopleQuiz(people))]);
+    }
+    setIndex(index + 1);
   }
 
   return (
@@ -1615,9 +1629,12 @@ function PeopleQuiz({ people, onClose }: { people: Person[]; onClose: () => void
       <ScrollView key={question ? `${index}:${question.kind}:${question.person.id}` : index} style={styles.personSheetScroll} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
         {!round.length ? (
           <Text style={styles.backupExplanation}>כדי להתחיל משחק, הוסף מקומות מגורים או תמונות לפרטים בלשונית אנשים.</Text>
-        ) : question ? (
+        ) : question && !finished ? (
           <>
-            <Text style={styles.backupExplanation}>שאלה {index + 1} מתוך {round.length}</Text>
+            <Text style={styles.backupExplanation}>שאלה {index + 1}</Text>
+            <Pressable accessibilityRole="button" style={[styles.peopleActionButton, styles.quizTextOption]} onPress={() => setFinished(true)}>
+              <Text style={styles.peopleActionText}>סיום וקבלת ציון</Text>
+            </Pressable>
             <Text style={styles.formLabel}>{quizPrompts[question.kind]}</Text>
             <View style={{ alignItems: 'center', gap: 8, marginBottom: 14 }}>
               {(question.kind === 'name' || question.kind === 'surname') && (
@@ -1654,7 +1671,9 @@ function PeopleQuiz({ people, onClose }: { people: Person[]; onClose: () => void
               <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => {
                 setInput('');
                 setUnavailableQuestion(null);
-                setRound((current) => current.filter((item) => item !== question));
+                const remaining = round.filter((_, position) => position !== index);
+                if (index === remaining.length && index > 0) remaining.push(...remaining.slice(0, index));
+                setRound(remaining);
               }}>
                 <Text style={styles.primaryButtonText}>דלג על תמונה לא זמינה</Text>
               </Pressable>
@@ -1664,21 +1683,21 @@ function PeopleQuiz({ people, onClose }: { people: Person[]; onClose: () => void
                 <Text style={styles.formLabel} accessibilityLiveRegion="polite">
                   {answers[index] ? 'נכון!' : `התשובה הנכונה היא ${question.kind === 'face' ? 'התמונה המסומנת' : question.answer}`}
                 </Text>
-                <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => { setInput(''); setIndex(index + 1); }}>
-                  <Text style={styles.primaryButtonText}>{index + 1 === round.length ? 'לציון שלי' : 'לשאלה הבאה'}</Text>
+                <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={nextQuestion}>
+                  <Text style={styles.primaryButtonText}>לשאלה הבאה</Text>
                 </Pressable>
               </View>
             )}
           </>
         ) : (
           <>
-            <Text style={styles.modalTitle}>הציון שלך {answers.filter(Boolean).length} מתוך {round.length}</Text>
+            <Text style={styles.modalTitle}>{answers.length ? `הציון שלך ${answers.filter(Boolean).length} מתוך ${answers.length}` : 'עדיין לא ענית על שאלות'}</Text>
             {!!missed.length && (
               <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => start(missed)}>
                 <Text style={styles.primaryButtonText}>תרגול השאלות שטעיתי בהן</Text>
               </Pressable>
             )}
-            <Pressable accessibilityRole="button" style={[styles.peopleActionButton, styles.quizTextOption]} onPress={() => start(makePeopleQuiz(people))}>
+            <Pressable accessibilityRole="button" style={[styles.peopleActionButton, styles.quizTextOption]} onPress={() => start()}>
               <Text style={styles.peopleActionText}>סבב חדש</Text>
             </Pressable>
           </>

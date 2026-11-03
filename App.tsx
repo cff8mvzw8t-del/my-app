@@ -1306,7 +1306,7 @@ function StoredApp({ stored }: { stored: LoadResult }) {
             </>
           )}
 
-          {tab === 'journal' && <TrackingJournal events={trackingEvents} values={trackingValues} onValuesChange={setTrackingValues} onNewEvent={() => setTab('home')} onReset={() => { setTrackingEvents([]); setTrackingValues([]); setTrackingNotice(false); }} />}
+          {tab === 'journal' && <TrackingJournal people={people} events={trackingEvents} values={trackingValues} onValuesChange={setTrackingValues} onNewEvent={() => setTab('home')} onReset={() => { setTrackingEvents([]); setTrackingValues([]); setTrackingNotice(false); }} />}
           {tab === 'tasks' && (
             <>
               <PageTitle eyebrow="הדברים שלך" title="המשימות שלי" caption="מסודרות לפי דחיפות, חשיבות ומועד" />
@@ -1546,7 +1546,7 @@ function TrackingAutocomplete({ label, options, selected, onSelect, compact = fa
   const matches = query.trim() && !selected ? options.filter(({ name }) => name.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 8) : [];
   return <View>
     <Text style={styles.formLabel}>{label}</Text>
-    <TextInput accessibilityLabel={label} accessibilityHint={hint} style={compact ? styles.trackingInput : styles.formInput} value={options.find((option) => option.id === selected)?.name ?? (selected ? '' : query)} onChangeText={(text) => {
+    <TextInput accessibilityLabel={label} accessibilityHint={hint} placeholder={compact ? undefined : `חיפוש לפי ${label}`} placeholderTextColor={C.muted} style={compact ? styles.trackingInput : styles.formInput} value={options.find((option) => option.id === selected)?.name ?? (selected ? '' : query)} onChangeText={(text) => {
       setQuery(text);
       onSelect('');
     }} />
@@ -1691,7 +1691,8 @@ function TrackingMedia({ media }: { media: NonNullable<TrackingEvent['media']> }
   return <Text style={styles.sheetIntro}>סרטון מצורף</Text>;
 }
 
-function TrackingJournal({ events, values, onValuesChange, onNewEvent, onReset }: {
+function TrackingJournal({ people, events, values, onValuesChange, onNewEvent, onReset }: {
+  people: Person[];
   events: TrackingEvent[];
   values: string[];
   onValuesChange: (values: string[]) => void;
@@ -1710,7 +1711,9 @@ function TrackingJournal({ events, values, onValuesChange, onNewEvent, onReset }
   const [expanded, setExpanded] = useState<string | null>(null);
   const name = value.trim();
   const canSave = !!name && !values.some((item) => item !== editing && item.toLowerCase() === name.toLowerCase());
-  const names = Array.from(new Map(events.map((event) => [event.personId, event.personName])), ([id, name]) => ({ id, name }));
+  const namesById = new Map(events.map((event) => [event.personId, event.personName]));
+  people.forEach(({ id, name }) => namesById.set(id, name));
+  const names = Array.from(namesById, ([id, name]) => ({ id, name }));
   const eventValues = [...new Set([...values, ...events.map((event) => event.value)])];
   const today = new Date();
   const weekStart = new Date(today.getFullYear(), today.getMonth(), today.getDate() - today.getDay());

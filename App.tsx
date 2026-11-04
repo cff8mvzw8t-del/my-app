@@ -966,7 +966,7 @@ function StoredApp({ stored }: { stored: LoadResult }) {
                   <Text style={styles.greetingTitle}>{formatGreeting()}</Text>
                   <Text style={styles.homeQuote}>{'מַיִם רַבִּים לֹא יוּכְלוּ לְכַבּוֹת אֶת הָאַהֲבָה\nוּנְהָרוֹת לֹא יִשְׁטְפוּהָ'}</Text>
                 </View>
-                <View style={{ width: homeArtworkWidth, height: homeArtworkWidth * 394 / 1020 }}>
+                <View style={{ width: homeArtworkWidth, height: homeArtworkWidth * 394 / 1020, marginTop: -56 }}>
                   <Image source={require('./assets/home-dragon-mountain.png')} resizeMode="stretch"
                     style={{ width: '100%', height: '100%' }} />
                   <Svg pointerEvents="none" aria-hidden style={StyleSheet.absoluteFill} width="100%" height="100%">
@@ -1593,7 +1593,7 @@ function HomeWeather() {
     : status === 'error' ? 'מזג אוויר לא זמין · נסה שוב'
     : weather ? `\u2066${weather.temperature}°C\u2069 · רוח ${weather.wind} קשר`
     : 'מזג אוויר לפי מיקום';
-  return <Pressable accessibilityRole="button" accessibilityLabel={weather && status === 'idle' ? `${label}, רענון מזג אוויר` : label} disabled={status === 'loading'} onPress={loadWeather} style={{ minHeight: 44, justifyContent: 'center' }}>
+  return <Pressable accessibilityRole="button" accessibilityLabel={weather && status === 'idle' ? `${label}, רענון מזג אוויר` : label} disabled={status === 'loading'} onPress={loadWeather} hitSlop={4} style={{ minHeight: 24, justifyContent: 'center', marginBottom: 4 }}>
     <Text accessibilityLiveRegion="polite" style={{ color: C.violetLight, fontSize: 13 }}>{label}</Text>
   </Pressable>;
 }
@@ -2653,17 +2653,17 @@ const styles = StyleSheet.create({
   appFrame: { flex: 1, minHeight: 0, width: '100%', maxWidth: 560, alignSelf: 'center', backgroundColor: C.background },
   screenTransition: { flex: 1, minHeight: 0 },
   scrollContent: { paddingHorizontal: spacing.xl, paddingTop: spacing.md, paddingBottom: spacing.xxl },
-  homeScrollContent: { flexGrow: 1, justifyContent: 'space-between', paddingBottom: spacing.md },
-  homeHero: { marginHorizontal: -spacing.xl, marginBottom: spacing.md, paddingBottom: spacing.md, backgroundColor: C.background },
-  homeQuote: { marginTop: 4, color: C.ink, fontSize: 17, lineHeight: 24, textAlign: 'right' },
+  homeScrollContent: { flexGrow: 1, paddingTop: 4, paddingBottom: spacing.md },
+  homeHero: { marginHorizontal: -spacing.xl, marginBottom: 0, paddingBottom: 0, backgroundColor: C.background },
+  homeQuote: { marginTop: 2, color: C.ink, fontSize: 13, lineHeight: 18, textAlign: 'right', maxWidth: '76%' },
   homeMotto: { color: '#E3D2EF', fontSize: 14, lineHeight: 17, marginTop: 1 },
-  topBar: { flexDirection: 'row-reverse', alignItems: 'center', marginHorizontal: spacing.xl, marginBottom: spacing.xl },
+  topBar: { flexDirection: 'row-reverse', alignItems: 'center', marginHorizontal: spacing.xl, marginBottom: 4 },
   topBarSpacer: { flex: 1 },
   topIconButton: { width: 40, height: 40, borderRadius: radius.pill, backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.line },
   topIcon: { color: C.ink, fontSize: 26, lineHeight: 30 },
-  greetingBlock: { alignItems: 'flex-end', marginHorizontal: spacing.xl, marginBottom: spacing.sm },
-  greetingSmall: { color: C.muted, fontSize: 12, marginBottom: 5 },
-  greetingTitle: { color: C.ink, fontSize: 29, fontWeight: '700', letterSpacing: -0.4, marginBottom: 3 },
+  greetingBlock: { alignItems: 'flex-end', marginHorizontal: spacing.xl, marginBottom: 0, zIndex: 1 },
+  greetingSmall: { color: C.muted, fontSize: 12, marginBottom: 0 },
+  greetingTitle: { color: C.ink, fontSize: 25, fontWeight: '700', letterSpacing: -0.4, marginBottom: 3 },
   trackingRow: { flexDirection: 'row-reverse', alignItems: 'flex-start', gap: 6, marginTop: 10 },
   trackingCell: { flex: 1, minWidth: 0 },
   trackingInput: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 5, backgroundColor: C.background, borderRadius: 8, borderWidth: 1, borderColor: C.line, color: C.ink, fontSize: 16 },

@@ -1031,21 +1031,7 @@ function StoredApp({ stored }: { stored: LoadResult }) {
                 </View>
               </View>
 
-              <Pressable
-                style={({ pressed }) => [styles.homeProgressCard, pressed && styles.pressedControl]}
-                onPress={() => setTab('roster')}
-                accessibilityRole="button"
-                accessibilityLabel="פתיחת המצבה ועדכון תמונת הנוכחות"
-              >
-                <View style={styles.homeProgressHeader}>
-                  <View style={styles.homeProgressCopy}>
-                    <Text style={styles.homeProgressTitle}>תמונת מצב נוכחות</Text>
-                    <Text style={styles.homeProgressCaption}>{presentRosterCount} נוכחים · {absentRosterCount} לא נוכחים</Text>
-                  </View>
-                  <Text style={styles.homeProgressPercent}>{rosterRows.length ? Math.round((presentRosterCount / rosterRows.length) * 100) : 0}%</Text>
-                </View>
-                <GradientProgressBar progress={rosterRows.length ? presentRosterCount / rosterRows.length : 0} label="אחוז נוכחות" />
-              </Pressable>
+              <AttendanceOverview rows={rosterRows} baseOptions={baseOptions} onOpenRoster={() => setTab('roster')} />
             </>
           )}
 
@@ -1329,7 +1315,7 @@ function StoredApp({ stored }: { stored: LoadResult }) {
             </>
           )}
 
-          {tab === 'journal' && <TrackingJournal people={people} events={trackingEvents} values={trackingValues} onValuesChange={setTrackingValues} onNewEvent={() => setTab('home')} onReset={() => { setTrackingEvents([]); setTrackingValues([]); setTrackingNotice(false); }} />}
+          {tab === 'journal' && <TrackingJournal people={people} events={trackingEvents} values={trackingValues} onValuesChange={setTrackingValues} onNewEvent={() => setTab('home')} onDelete={(id) => setTrackingEvents((current) => current.filter((event) => event.id !== id))} onReset={() => { setTrackingEvents([]); setTrackingNotice(false); }} />}
           {tab === 'tasks' && (
             <>
               <PageTitle eyebrow="הדברים שלך" title="המשימות שלי" caption="מסודרות לפי דחיפות, חשיבות ומועד" />
@@ -1557,6 +1543,88 @@ function TaskRow({ task, onToggle, onChangeDue, last = false }: { task: TaskItem
   );
 }
 
+function AttendanceOverview({ rows, baseOptions, onOpenRoster }: {
+  rows: { person: Person; entry: RosterEntry }[];
+  baseOptions: string[];
+  onOpenRoster: () => void;
+}) {
+  const [expandedBase, setExpandedBase] = useState<string | null>(null);
+  const present = rows.filter(({ entry }) => entry.attendance === 'נוכח');
+  const percent = rows.length ? Math.round(present.length / rows.length * 100) : 0;
+  const reasons = new Map<string, number>();
+  rows.filter(({ entry }) => entry.attendance !== 'נוכח').forEach(({ entry }) => {
+    const reason = entry.reason.trim() || 'לא צוינה סיבה';
+    reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
+  });
+  const colors = ['#A855F7', '#22C55E', '#3B82F6', '#14B8A6', '#F472B6', '#FACC15', '#EF4444', '#A3E635', '#38D8F2', '#E2E8F0'];
+  const statuses = [
+    { label: 'נוכחים', count: present.length, color: '#22C55E' },
+    ...Array.from(reasons, ([label, count], index) => ({ label, count, color: colors[index % colors.length] })),
+  ].filter(({ count }) => count > 0);
+  const bases = new Map<string, Person[]>();
+  present.forEach(({ person, entry }) => {
+    const base = entry.base.trim() || 'מיקום לא הוגדר';
+    bases.set(base, [...(bases.get(base) ?? []), person]);
+  });
+  const colorKeys = [...new Set([...baseOptions.map((base) => base.trim()), ...bases.keys()])];
+  const baseColor = (base: string) => colors[colorKeys.indexOf(base) % colors.length];
+  const circumference = 2 * Math.PI * 40;
+  let ringOffset = 0;
+  const ringSegments = Array.from(bases, ([base, people]) => {
+    const length = rows.length ? people.length / rows.length * circumference : 0;
+    const segment = { base, length, offset: ringOffset, color: baseColor(base) };
+    ringOffset += length;
+    return segment;
+  });
+
+  return <View style={styles.homeProgressCard}>
+    <View style={styles.attendanceOverviewHeader}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.homeProgressTitle}>מצב נוכחות</Text>
+        <Text style={styles.homeProgressCaption}>{present.length} מתוך {rows.length} נוכחים</Text>
+        <Pressable accessibilityRole="button" style={{ minHeight: 44, justifyContent: 'center' }} onPress={onOpenRoster}><Text style={{ color: C.violetLight, fontSize: 13 }}>פתיחת המצבה ←</Text></Pressable>
+      </View>
+      <View accessible accessibilityLabel={`${percent}% נוכחות, ${present.length} מתוך ${rows.length}`} style={{ width: 100, height: 100, alignItems: 'center', justifyContent: 'center' }}>
+        <Svg aria-hidden pointerEvents="none" width={100} height={100} viewBox="0 0 100 100" style={StyleSheet.absoluteFill}>
+          <Defs><LinearGradient id="attendanceRingPurple" x1="0" y1="0" x2="1" y2="1"><Stop offset="0" stopColor="#B679EF" /><Stop offset="1" stopColor="#7135A6" /></LinearGradient></Defs>
+          <Circle cx={50} cy={50} r={40} stroke="#27212F" strokeWidth={8} fill="none" />
+          {ringSegments.map(({ base, length, offset, color }) => <Circle key={base} cx={50} cy={50} r={40} stroke={color} strokeWidth={8} fill="none" strokeDasharray={`${Math.max(0, length - 1.5)} ${circumference}`} strokeDashoffset={-offset} transform="rotate(-90 50 50)" />)}
+        </Svg>
+        <Text style={{ color: C.ink, fontSize: 25, fontWeight: '700', textAlign: 'center' }}>{percent}%</Text>
+        <Text style={{ color: C.muted, fontSize: 11 }}>נוכחות</Text>
+      </View>
+    </View>
+    <Text style={styles.attendanceOverviewLabel}>סטטוסים</Text>
+    <View accessible accessibilityLabel={statuses.map(({ label, count }) => `${label} ${count}`).join(', ') || 'אין נתוני נוכחות'} style={styles.attendanceSegments}>
+      {statuses.map(({ label, count, color }) => <View key={label} style={{ flex: count, height: '100%', backgroundColor: color }} />)}
+    </View>
+    <View style={styles.attendanceLegend}>
+      {statuses.map(({ label, count, color }) => <View key={label} style={styles.attendanceLegendItem}>
+        <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: color }} />
+        <Text style={{ color: C.muted, fontSize: 12 }}>{label}</Text>
+        <Text style={{ color: C.ink, fontSize: 12, fontWeight: '700' }}>{count}</Text>
+      </View>)}
+    </View>
+    <Text style={styles.attendanceOverviewLabel}>נוכחים לפי מיקום</Text>
+    {!bases.size && <Text style={styles.homeProgressCaption}>{rows.length ? 'אין נוכחים כרגע.' : 'הוסף אנשים כדי לראות את תמונת הנוכחות.'}</Text>}
+    {Array.from(bases, ([base, people]) => {
+      const expanded = expandedBase === base;
+      return <View key={base} style={styles.attendanceBase}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`${base}, ${people.length} נוכחים`} accessibilityState={{ expanded }} style={styles.attendanceBaseHeader} onPress={() => setExpandedBase(expanded ? null : base)}>
+          <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: baseColor(base) }} />
+          <Text style={{ flex: 1, color: C.ink, fontSize: 15, fontWeight: '700' }}>{base}</Text>
+          <Text style={{ color: baseColor(base), fontSize: 17, fontWeight: '700' }}>{people.length}</Text>
+          <View style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }}><AppIcon name="chevronDown" size={15} color={C.muted} /></View>
+        </Pressable>
+        {expanded && people.map((person) => <View key={person.id} style={styles.attendancePerson}>
+          <Text style={{ flex: 1, color: C.ink, fontSize: 14 }}>{person.name}</Text>
+          <Text style={{ color: C.muted, fontSize: 12, maxWidth: '40%' }}>{person.role || 'ללא פק״ל'}</Text>
+        </View>)}
+      </View>;
+    })}
+  </View>;
+}
+
 function HomeWeather() {
   const [weather, setWeather] = useState<{ temperature: number; wind: number } | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'location' | 'error'>('idle');
@@ -1755,13 +1823,14 @@ function TrackingMedia({ media }: { media: NonNullable<TrackingEvent['media']> }
   return <Text style={styles.sheetIntro}>סרטון מצורף</Text>;
 }
 
-function TrackingJournal({ people, events, values, onValuesChange, onNewEvent, onReset }: {
+function TrackingJournal({ people, events, values, onValuesChange, onNewEvent, onReset, onDelete }: {
   people: Person[];
   events: TrackingEvent[];
   values: string[];
   onValuesChange: (values: string[]) => void;
   onNewEvent: () => void;
   onReset: () => void;
+  onDelete: (id: string) => void;
 }) {
   const [value, setValue] = useState('');
   const [editing, setEditing] = useState<string | null>(null);
@@ -1773,6 +1842,7 @@ function TrackingJournal({ people, events, values, onValuesChange, onNewEvent, o
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<TrackingEvent | null>(null);
   const name = value.trim();
   const canSave = !!name && !values.some((item) => item !== editing && item.toLowerCase() === name.toLowerCase());
   const namesById = new Map(events.map((event) => [event.personId, event.personName]));
@@ -1831,7 +1901,7 @@ function TrackingJournal({ people, events, values, onValuesChange, onNewEvent, o
     </View>}
     {panel === 'reset' && <Sheet visible onClose={() => setPanel(null)}>
       <Text style={styles.modalTitle}>לאפס את יומן המעקב?</Text>
-      <Text style={styles.sheetIntro}>הפעולה תמחק {events.length} אירועים ו־{values.length} ערכים, כולל הקבצים המצורפים ליומן.</Text>
+      <Text style={styles.sheetIntro}>הפעולה תמחק {events.length} אירועים, כולל הקבצים המצורפים אליהם. מאגר הערכים יישמר.</Text>
       <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => {
         onReset();
         clearFilters();
@@ -1841,6 +1911,13 @@ function TrackingJournal({ people, events, values, onValuesChange, onNewEvent, o
         setPanel(null);
       }}><Text style={styles.primaryButtonText}>כן, לאפס את היומן</Text></Pressable>
       <Pressable accessibilityRole="button" style={styles.navigationAction} onPress={() => setPanel(null)}><Text style={styles.navigationActionText}>ביטול</Text></Pressable>
+    </Sheet>}
+    {deleting && <Sheet visible onClose={() => setDeleting(null)}>
+      <Text style={styles.modalTitle}>למחוק את האירוע?</Text>
+      <Text style={styles.sheetIntro}>{deleting.personName} · {displayPersonalDate(deleting.date)} · {deleting.time}</Text>
+      <Text style={styles.sheetIntro}>האירוע והקובץ המצורף אליו יימחקו מהיומן.</Text>
+      <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => { onDelete(deleting.id); setDeleting(null); }}><Text style={styles.primaryButtonText}>כן, למחוק את האירוע</Text></Pressable>
+      <Pressable accessibilityRole="button" style={styles.navigationAction} onPress={() => setDeleting(null)}><Text style={styles.navigationActionText}>ביטול</Text></Pressable>
     </Sheet>}
     {!ordered.length && <Text style={styles.sheetIntro}>{events.length ? 'אין אירועים שמתאימים לסינון.' : 'עדיין אין אירועים ביומן.'}</Text>}
     {ordered.map((event) => {
@@ -1854,7 +1931,7 @@ function TrackingJournal({ people, events, values, onValuesChange, onNewEvent, o
           </View>
           <Text style={styles.sheetIntro}>{displayPersonalDate(event.date)} · {event.time} · {event.value}</Text>
         </Pressable>
-        {open && <><Text style={{ color: C.ink, marginBottom: 8 }}>{event.details}</Text>{event.media && <TrackingMedia media={event.media} />}</>}
+        {open && <><Text style={{ color: C.ink, marginBottom: 8 }}>{event.details}</Text>{event.media && <TrackingMedia media={event.media} />}<Pressable accessibilityRole="button" accessibilityLabel={`מחיקת אירוע של ${event.personName}`} style={styles.navigationAction} onPress={() => setDeleting(event)}><Text style={styles.peopleDeleteText}>מחיקת אירוע</Text></Pressable></>}
       </View>;
     })}
   </>;
@@ -2671,6 +2748,14 @@ const styles = StyleSheet.create({
   trackingMedia: { width: '100%', height: 180 },
   homeTimePill: { flexDirection: 'row-reverse', alignItems: 'center', gap: 3 },
   homeLtrTime: { writingDirection: 'ltr' },
+  attendanceOverviewHeader: { flexDirection: 'row-reverse', alignItems: 'center', gap: 14, marginBottom: 10 },
+  attendanceOverviewLabel: { color: C.muted, fontSize: 12, marginBottom: 10, marginTop: 10 },
+  attendanceSegments: { flexDirection: 'row-reverse', height: 12, borderRadius: 5, overflow: 'hidden', backgroundColor: '#27212F' },
+  attendanceLegend: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 12, marginTop: 12, marginBottom: 8 },
+  attendanceLegendItem: { flexDirection: 'row-reverse', alignItems: 'center', gap: 5 },
+  attendanceBase: { borderWidth: 1, borderColor: C.line, borderRadius: 11, marginBottom: 8, overflow: 'hidden' },
+  attendanceBaseHeader: { flexDirection: 'row-reverse', alignItems: 'center', gap: 9, paddingHorizontal: 12, minHeight: 48 },
+  attendancePerson: { flexDirection: 'row-reverse', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 12, borderTopWidth: 1, borderTopColor: C.line },
   homeProgressCard: { backgroundColor: C.card, borderRadius: 18, borderWidth: 1, borderColor: C.line, padding: spacing.md, marginBottom: spacing.lg, shadowColor: '#000000', shadowOffset: { width: 0, height: 7 }, shadowOpacity: 0.16, shadowRadius: 15, elevation: 2 },
   homeProgressHeader: { flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between', marginBottom: 11 },
   homeProgressCopy: { alignItems: 'flex-end' },

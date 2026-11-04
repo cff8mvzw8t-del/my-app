@@ -966,8 +966,28 @@ function StoredApp({ stored }: { stored: LoadResult }) {
                   <Text style={styles.greetingTitle}>{formatGreeting()}</Text>
                   <Text style={styles.homeQuote}>{'מַיִם רַבִּים לֹא יוּכְלוּ לְכַבּוֹת אֶת הָאַהֲבָה\nוּנְהָרוֹת לֹא יִשְׁטְפוּהָ'}</Text>
                 </View>
-                <Image source={require('./assets/home-dragon-mountain.png')} resizeMode="stretch"
-                  style={{ width: homeArtworkWidth, height: homeArtworkWidth * 394 / 1020 }} />
+                <View style={{ width: homeArtworkWidth, height: homeArtworkWidth * 394 / 1020 }}>
+                  <Image source={require('./assets/home-dragon-mountain.png')} resizeMode="stretch"
+                    style={{ width: '100%', height: '100%' }} />
+                  <Svg pointerEvents="none" aria-hidden style={StyleSheet.absoluteFill} width="100%" height="100%">
+                    <Defs>
+                      <LinearGradient id="mountainVerticalFade" x1="0" y1="0" x2="0" y2="1">
+                        <Stop offset="0" stopColor={C.background} />
+                        <Stop offset="0.06" stopColor={C.background} stopOpacity={0} />
+                        <Stop offset="0.64" stopColor={C.background} stopOpacity={0} />
+                        <Stop offset="0.97" stopColor={C.background} />
+                      </LinearGradient>
+                      <LinearGradient id="mountainHorizontalFade" x1="0" y1="0" x2="1" y2="0">
+                        <Stop offset="0" stopColor={C.background} />
+                        <Stop offset="0.10" stopColor={C.background} stopOpacity={0} />
+                        <Stop offset="0.88" stopColor={C.background} stopOpacity={0} />
+                        <Stop offset="1" stopColor={C.background} />
+                      </LinearGradient>
+                    </Defs>
+                    <Rect width="100%" height="100%" fill="url(#mountainVerticalFade)" />
+                    <Rect width="100%" height="100%" fill="url(#mountainHorizontalFade)" />
+                  </Svg>
+                </View>
               </View>
 
               <TrackingForm key={trackingFormKey} people={people} values={trackingValues} onJournal={() => setTab('journal')} onSave={(event) => {

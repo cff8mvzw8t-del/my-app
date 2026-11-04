@@ -1704,7 +1704,7 @@ function TrackingForm({ people, values, onJournal, onSave }: {
   const [value, setValue] = useState('');
   const [kind, setKind] = useState<TrackingKind>('שיפור');
   const [details, setDetails] = useState('');
-  const [media, setMedia] = useState<TrackingEvent['media']>();
+  const [attachments, setAttachments] = useState<NonNullable<TrackingEvent['media']>[]>([]);
   const [mediaMenu, setMediaMenu] = useState(false);
   const [mediaError, setMediaError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1717,30 +1717,36 @@ function TrackingForm({ people, values, onJournal, onSave }: {
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = source + '/*';
+      input.multiple = true;
       input.setAttribute('capture', 'environment');
-      input.onchange = () => { if (input.files?.[0]) void readMedia(input.files[0]); };
+      input.onchange = () => { if (input.files?.length) void readMedia(Array.from(input.files)); };
       input.click();
       return;
     }
     setMediaError('');
     try {
-      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images', 'videos'] });
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images', 'videos'], allowsMultipleSelection: true });
       if (!result.canceled) {
-        const asset = result.assets[0];
-        await readMedia(asset.file ?? await (await fetch(asset.uri)).blob());
+        setBusy(true);
+        const files: Blob[] = [];
+        for (const asset of result.assets) files.push(asset.file ?? await (await fetch(asset.uri)).blob());
+        await readMedia(files);
       }
     } catch {
       setMediaError('פתיחת הקובץ נכשלה. אפשר לנסות שוב.');
+    } finally {
+      setBusy(false);
     }
   }
 
-  async function readMedia(blob: Blob) {
+  async function readMedia(files: Blob[]) {
     setBusy(true);
     setMediaError('');
     try {
+      for (const blob of files) {
       if (blob.size > 10 * 1024 * 1024) {
         setMediaError('אפשר לצרף קובץ עד 10 מגה־בייט.');
-        return;
+        continue;
       }
       const uri = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -1750,7 +1756,8 @@ function TrackingForm({ people, values, onJournal, onSave }: {
       });
       const mediaKind = blob.type.startsWith('video/') ? 'video' : 'image';
       if (!uri.startsWith(`data:${mediaKind}/`)) throw new Error('Unsupported media');
-      setMedia({ kind: mediaKind, uri });
+      setAttachments((current) => [...current, { kind: mediaKind, uri }]);
+      }
     } catch {
       setMediaError('פתיחת הקובץ נכשלה. אפשר לנסות שוב.');
     } finally {
@@ -1794,10 +1801,10 @@ function TrackingForm({ people, values, onJournal, onSave }: {
     </Sheet>}
     {busy && <Text style={styles.sheetIntro}>מכין את הקובץ…</Text>}
     {!!mediaError && <Text style={styles.peopleDeleteText}>{mediaError}</Text>}
-    {media && <><TrackingMedia media={media} /><Pressable accessibilityRole="button" style={styles.navigationAction} onPress={() => setMedia(undefined)}><Text style={styles.navigationActionText}>הסרת הקובץ</Text></Pressable></>}
+    {attachments.map((media, index) => <View key={index}><TrackingMedia media={media} /><Pressable accessibilityRole="button" accessibilityLabel={`הסרת קובץ ${index + 1}`} style={styles.navigationAction} disabled={busy} onPress={() => setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Text style={styles.navigationActionText}>הסרת קובץ {index + 1}</Text></Pressable></View>)}
     <Pressable accessibilityRole="button" disabled={!canSave} style={[styles.primaryButton, !canSave && { opacity: 0.45 }]} onPress={() => {
       if (!canSave || !person) return;
-      onSave({ id: `event-${Date.now()}-${Math.random().toString(36).slice(2)}`, personId, personName: person.name, value, date, time, kind, details: details.trim(), media });
+      onSave({ id: `event-${Date.now()}-${Math.random().toString(36).slice(2)}`, personId, personName: person.name, value, date, time, kind, details: details.trim(), attachments });
     }}><Text style={styles.primaryButtonText}>שמירת אירוע</Text></Pressable>
     {picker === 'when' && <Sheet visible onClose={() => setPicker(null)}>
       <Text style={styles.modalTitle}>תאריך ושעת האירוע</Text>
@@ -1931,7 +1938,7 @@ function TrackingJournal({ people, events, values, onValuesChange, onNewEvent, o
           </View>
           <Text style={styles.sheetIntro}>{displayPersonalDate(event.date)} · {event.time} · {event.value}</Text>
         </Pressable>
-        {open && <><Text style={{ color: C.ink, marginBottom: 8 }}>{event.details}</Text>{event.media && <TrackingMedia media={event.media} />}<Pressable accessibilityRole="button" accessibilityLabel={`מחיקת אירוע של ${event.personName}`} style={styles.navigationAction} onPress={() => setDeleting(event)}><Text style={styles.peopleDeleteText}>מחיקת אירוע</Text></Pressable></>}
+        {open && <><Text style={{ color: C.ink, marginBottom: 8 }}>{event.details}</Text>{(event.attachments ?? (event.media ? [event.media] : [])).map((media, index) => <TrackingMedia key={index} media={media} />)}<Pressable accessibilityRole="button" accessibilityLabel={`מחיקת אירוע של ${event.personName}`} style={styles.navigationAction} onPress={() => setDeleting(event)}><Text style={styles.peopleDeleteText}>מחיקת אירוע</Text></Pressable></>}
       </View>;
     })}
   </>;

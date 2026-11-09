@@ -1,3 +1,4 @@
+import { normalizeRequestTime, requestFields, requestStatuses } from './personRecords';
 import type { Person, GuardPost, GuardTimeSlot, GuardAssignment, RosterEntry, TaskItem, ReadinessShift } from './App';
 import { normalizePersonalDate } from './personalDates';
 import { isPhotoFraming } from './photoFraming';
@@ -41,6 +42,21 @@ const rows = (value: unknown, check: (item: Record<string, unknown>) => boolean)
 const unique = (items: Record<string, unknown>[], key: string) => new Set(items.map((item) => item[key])).size === items.length;
 const optionalDate = (value: unknown) => value === undefined || (typeof value === 'string' && (value === '' || normalizePersonalDate(value) === value));
 
+function validPersonRecords(person: Record<string, unknown>) {
+  const { leaveRequests, homeVisits } = person;
+  if (leaveRequests !== undefined && (!rows(leaveRequests, (request) =>
+    fields(request, ['id', ...requestFields.map(([key]) => key)])
+    && requestStatuses.some((status) => request.status === status)
+    && optionalDate(request.departureDate) && !!request.departureDate
+    && optionalDate(request.returnDate) && !!request.returnDate
+    && normalizeRequestTime(request.departureTime as string) === request.departureTime
+    && normalizeRequestTime(request.returnTime as string) === request.returnTime
+  ) || !unique(leaveRequests, 'id'))) return false;
+  return homeVisits === undefined || (rows(homeVisits, (visit) =>
+    fields(visit, ['id', 'date', 'summary', 'followUp']) && optionalDate(visit.date) && !!visit.date
+  ) && unique(homeVisits, 'id'));
+}
+
 function isAppData(value: unknown): value is SavedAppData {
   if (!record(value)) return false;
   if (value.readinessFighterLabels !== undefined && (!strings(value.readinessFighterLabels) || value.readinessFighterLabels.length !== 4 || !value.readinessFighterLabels.every((label) => label.trim().length > 0 && label.length <= 30))) return false;
@@ -49,6 +65,7 @@ function isAppData(value: unknown): value is SavedAppData {
     && (person.group === undefined || ['lone', 'married', 'other'].includes(person.group as string))
     && (person.isCommander === undefined || typeof person.isCommander === 'boolean')
     && optionalDate(person.birthday)
+    && validPersonRecords(person)
     && (person.partner === undefined || (record(person.partner) && typeof person.partner.name === 'string' && optionalDate(person.partner.birthday) && optionalDate(person.partner.relationshipStart)))
     && (person.photoUri === undefined || typeof person.photoUri === 'string')
     && (person.photoFraming === undefined || isPhotoFraming(person.photoFraming))

@@ -1,3 +1,4 @@
+import { normalizeRequestDate, normalizeRequestTime, parseLeaveRequest, requestFields, requestStatuses, type HomeVisit, type LeaveRequest, type RequestFields } from './personRecords';
 import React, { useMemo, useState } from 'react';
 import {
   Animated,
@@ -31,7 +32,7 @@ import { prepareProfilePhoto } from './profilePhotoUri';
 import { makePeopleQuiz, type QuizQuestion } from './peopleQuiz';
 
 type DomainTab = 'medical' | 'welfare' | 'fitness' | 'education' | 'readiness';
-type Tab = 'home' | 'people' | 'guards' | 'roster' | 'tasks' | 'journal' | DomainTab;
+type Tab = 'home' | 'people' | 'guards' | 'roster' | 'tasks' | 'journal' | 'leaveRequests' | DomainTab;
 export type Person = {
   id: string;
   name: string;
@@ -42,6 +43,8 @@ export type Person = {
   photoUri?: string;
   photoFraming?: PhotoFraming;
   color: string;
+  leaveRequests?: LeaveRequest[];
+  homeVisits?: HomeVisit[];
   statusDetails?: Partial<Record<PersonStatusField, string>>;
   group?: 'lone' | 'married' | 'other';
   isCommander?: boolean;
@@ -846,6 +849,17 @@ function StoredApp({ stored }: { stored: LoadResult }) {
     setDeletePeopleOpen(false);
   }
 
+  function updatePersonRecords(id: string, update: (person: Person) => Person) {
+    setPeople((current) => current.map((person) => person.id === id ? update(person) : person));
+  }
+
+  function updateRequestStatus(personId: string, requestId: string, status: LeaveRequest['status']) {
+    updatePersonRecords(personId, (person) => ({
+      ...person,
+      leaveRequests: person.leaveRequests?.map((request) => request.id === requestId ? { ...request, status } : request),
+    }));
+  }
+
   function savePerson(person: Person) {
     if (people.some((item) => item.id !== person.id && normalizedPersonName(item.name) === normalizedPersonName(person.name))) return;
     if (![person.birthday, person.partner?.birthday, person.partner?.relationshipStart].every((date) => isValidPastDate(date))) return;
@@ -860,7 +874,7 @@ function StoredApp({ stored }: { stored: LoadResult }) {
     const nextPeople = people.some((item) => item.id === savedPerson.id) ? people.map((item) => item.id === savedPerson.id ? savedPerson : item) : [savedPerson, ...people];
     setReadinessShifts((current) => reconcileReadinessPeople(current, nextPeople));
     setPeople((current) => current.some((item) => item.id === savedPerson.id)
-      ? current.map((item) => item.id === savedPerson.id ? savedPerson : item)
+      ? current.map((item) => item.id === savedPerson.id ? { ...savedPerson, leaveRequests: item.leaveRequests, homeVisits: item.homeVisits } : item)
       : [savedPerson, ...current]);
     setActivePerson(null);
     if (!person.id) setSearch('');
@@ -1315,6 +1329,7 @@ function StoredApp({ stored }: { stored: LoadResult }) {
             </>
           )}
 
+          {tab === 'leaveRequests' && <DepartmentRequests people={people} onStatus={updateRequestStatus} />}
           {tab === 'journal' && <TrackingJournal people={people} events={trackingEvents} values={trackingValues} onValuesChange={setTrackingValues} onNewEvent={() => setTab('home')} onDelete={(id) => setTrackingEvents((current) => current.filter((event) => event.id !== id))} onReset={() => { setTrackingEvents([]); setTrackingNotice(false); }} />}
           {tab === 'tasks' && (
             <>
@@ -1367,6 +1382,10 @@ function StoredApp({ stored }: { stored: LoadResult }) {
         <Pressable style={styles.navigationAction} onPress={() => { setQuickActionsOpen(false); setTab('journal'); }} accessibilityRole="button">
           <AppIcon name="education" color={C.navigationPurple} size={24} />
           <Text style={styles.navigationActionText}>יומן מעקב</Text>
+        </Pressable>
+        <Pressable style={styles.navigationAction} onPress={() => { setQuickActionsOpen(false); setTab('leaveRequests'); }} accessibilityRole="button">
+          <AppIcon name="calendar" color={C.navigationPurple} size={24} />
+          <Text style={styles.navigationActionText}>בקש״צים מחלקתיים</Text>
         </Pressable>
         <Text style={styles.formLabel}>פעולות</Text>
         <Pressable style={styles.navigationAction} onPress={() => { setQuickActionsOpen(false); setPeopleQuizOpen(true); }} accessibilityRole="button">
@@ -1421,6 +1440,9 @@ function StoredApp({ stored }: { stored: LoadResult }) {
         onClose={() => setActivePerson(null)}
         onEdit={() => setActivePerson((current) => current ? { ...current, editing: true } : null)}
         onSave={savePerson}
+        onAddRequest={(id, request) => updatePersonRecords(id, (person) => ({ ...person, leaveRequests: [request, ...(person.leaveRequests ?? [])] }))}
+        onAddVisit={(id, visit) => updatePersonRecords(id, (person) => ({ ...person, homeVisits: [visit, ...(person.homeVisits ?? [])] }))}
+        onRequestStatus={updateRequestStatus}
       />
       <Sheet visible={deletePeopleOpen} onClose={() => setDeletePeopleOpen(false)}>
         <Text style={styles.modalTitle}>מחיקת {selectedPeopleIds.length} אנשים?</Text>
@@ -2093,12 +2115,126 @@ function PeopleQuiz({ people, onClose }: { people: Person[]; onClose: () => void
   );
 }
 
-function PersonModal({ profile, people, onClose, onEdit, onSave }: {
+function LeaveRequestCard({ request, onStatus }: {
+  request: LeaveRequest;
+  onStatus: (status: LeaveRequest['status']) => void;
+}) {
+  return <View style={styles.personStatusDetail}>
+    <DetailRow label="יציאה" value={displayPersonalDate(request.departureDate) + ' · ' + request.departureTime} />
+    <DetailRow label="חזרה" value={displayPersonalDate(request.returnDate) + ' · ' + request.returnTime} />
+    {requestFields.slice(4).map(([key, label]) => <DetailRow key={key} label={label} value={request[key] || 'לא צוין'} />)}
+    <ChoiceGroup label="סטטוס הבקשה" options={[...requestStatuses]} value={request.status} onChange={onStatus} />
+  </View>;
+}
+
+function PersonRecords({ person, onAddRequest, onAddVisit, onStatus }: {
+  person: Person;
+  onAddRequest: (request: LeaveRequest) => void;
+  onAddVisit: (visit: HomeVisit) => void;
+  onStatus: (id: string, status: LeaveRequest['status']) => void;
+}) {
+  const [section, setSection] = useState<'requests' | 'visits' | null>(null);
+  const [message, setMessage] = useState('');
+  const [draft, setDraft] = useState<RequestFields | null>(null);
+  const [visit, setVisit] = useState({ date: '', summary: '', followUp: '' });
+  const [error, setError] = useState('');
+  const requests = person.leaveRequests ?? [];
+  const visits = person.homeVisits ?? [];
+
+  function saveRequest() {
+    if (!draft) return;
+    const departureDate = normalizeRequestDate(draft.departureDate);
+    const returnDate = normalizeRequestDate(draft.returnDate);
+    const departureTime = normalizeRequestTime(draft.departureTime);
+    const returnTime = normalizeRequestTime(draft.returnTime);
+    if (!departureDate || !returnDate || !departureTime || !returnTime || !draft.reason.trim()) {
+      setError('יש למלא תאריכים, שעות וסיבת בקשה תקינים.');
+      return;
+    }
+    if (departureDate + departureTime >= returnDate + returnTime) {
+      setError('מועד החזרה צריך להיות אחרי מועד היציאה.');
+      return;
+    }
+    onAddRequest({ ...draft, departureDate, returnDate, departureTime, returnTime, id: `leave-${Date.now()}`, status: 'ממתין' });
+    setDraft(null);
+    setMessage('');
+    setError('');
+  }
+
+  return <View>
+    <Pressable style={styles.navigationAction} accessibilityRole="button" accessibilityState={{ expanded: section === 'requests' }} onPress={() => { setSection(section === 'requests' ? null : 'requests'); setError(''); }}><Text style={styles.navigationActionText}>בקש״צים · {requests.length}</Text></Pressable>
+    {section === 'requests' && <View style={styles.personStatusDetail}>
+      <Text style={styles.formLabel}>הדבקת בקש״צ מוואטסאפ</Text>
+      <TextInput accessibilityLabel="הודעת בקש״צ" multiline style={styles.formInput} value={message} onChangeText={setMessage} />
+      <Pressable accessibilityRole="button" style={styles.navigationAction} onPress={() => { setDraft(parseLeaveRequest(message)); setError(''); }}><Text style={styles.navigationActionText}>{message.trim() ? 'מילוי פרטים מההודעה' : 'בקשה חדשה ידנית'}</Text></Pressable>
+      {draft && <View>
+        {requestFields.map(([key, label]) => <View key={key}><Text style={styles.formLabel}>{label}</Text>
+          <TextInput accessibilityLabel={label} multiline={key === 'reason'} style={styles.formInput} value={draft[key]} onChangeText={(value) => setDraft({ ...draft, [key]: value })} />
+        </View>)}
+        <Text style={styles.formHint}>הבקשה תישמר בתיק של {person.name}.</Text>
+        <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={saveRequest}><Text style={styles.primaryButtonText}>שמירת בקש״צ</Text></Pressable>
+      </View>}
+      {!!error && <Text accessibilityLiveRegion="polite" style={styles.peopleDeleteText}>{error}</Text>}
+      {requests.map((request) => <LeaveRequestCard key={request.id} request={request} onStatus={(status) => onStatus(request.id, status)} />)}
+    </View>}
+    <Pressable style={styles.navigationAction} accessibilityRole="button" accessibilityState={{ expanded: section === 'visits' }} onPress={() => { setSection(section === 'visits' ? null : 'visits'); setError(''); }}><Text style={styles.navigationActionText}>ביקורי בית · {visits.length}</Text></Pressable>
+    {section === 'visits' && <View style={styles.personStatusDetail}>
+      <DateField label="תאריך הביקור" value={visit.date} pastOnly onChange={(date) => setVisit({ ...visit, date })} />
+      <Text style={styles.formLabel}>סיכום הביקור</Text>
+      <TextInput accessibilityLabel="סיכום הביקור" multiline style={styles.formInput} value={visit.summary} onChangeText={(summary) => setVisit({ ...visit, summary })} />
+      <Text style={styles.formLabel}>נקודות למעקב</Text>
+      <TextInput accessibilityLabel="נקודות למעקב" multiline style={styles.formInput} value={visit.followUp} onChangeText={(followUp) => setVisit({ ...visit, followUp })} />
+      <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => {
+        if (!visit.date || !visit.summary.trim()) { setError('יש לבחור תאריך ולכתוב סיכום ביקור.'); return; }
+        onAddVisit({ ...visit, summary: visit.summary.trim(), followUp: visit.followUp.trim(), id: `visit-${Date.now()}` });
+        setVisit({ date: '', summary: '', followUp: '' });
+        setError('');
+      }}><Text style={styles.primaryButtonText}>שמירת ביקור בית</Text></Pressable>
+      {!!error && <Text accessibilityLiveRegion="polite" style={styles.peopleDeleteText}>{error}</Text>}
+      {visits.map((item) => <View key={item.id} style={styles.personStatusDetail}>
+        <DetailRow label="תאריך" value={displayPersonalDate(item.date)} />
+        <DetailRow label="סיכום" value={item.summary} />
+        {!!item.followUp && <DetailRow label="מעקב" value={item.followUp} />}
+      </View>)}
+    </View>}
+  </View>;
+}
+
+function DepartmentRequests({ people, onStatus }: {
+  people: Person[];
+  onStatus: (personId: string, requestId: string, status: LeaveRequest['status']) => void;
+}) {
+  const [name, setName] = useState('');
+  const [date, setDate] = useState('');
+  const [status, setStatus] = useState<'הכול' | LeaveRequest['status']>('הכול');
+  const requests = people.flatMap((person) => (person.leaveRequests ?? []).map((request) => ({ person, request })))
+    .filter(({ person, request }) => normalizedPersonName(person.name).includes(normalizedPersonName(name))
+      && (!date || date === request.departureDate) && (status === 'הכול' || status === request.status))
+    .sort((a, b) => (b.request.departureDate + b.request.departureTime).localeCompare(a.request.departureDate + a.request.departureTime));
+  return <>
+    <PageTitle title="בקש״צים מחלקתיים" caption={`${requests.length} בקשות בתצוגה`} />
+    <Text style={styles.formLabel}>חיפוש לפי שם</Text>
+    <TextInput accessibilityLabel="חיפוש לפי שם" style={styles.formInput} value={name} onChangeText={setName} />
+    <DateField label="סינון לפי תאריך יציאה" value={date} onChange={setDate} />
+    {!!date && <Pressable accessibilityRole="button" style={styles.navigationAction} onPress={() => setDate('')}><Text style={styles.navigationActionText}>ניקוי תאריך</Text></Pressable>}
+    <ChoiceGroup label="סינון לפי סטטוס" options={['הכול', ...requestStatuses]} value={status} onChange={setStatus} />
+    {!requests.length && <Text style={styles.sheetIntro}>אין בקשות בתצוגה.</Text>}
+    {requests.map(({ person, request }) => <View key={person.id + '/' + request.id} style={styles.personStatusDetail}>
+      <Text style={styles.sectionTitle}>{person.name}</Text>
+      <LeaveRequestCard request={request} onStatus={(next) => onStatus(person.id, request.id, next)} />
+    </View>)}
+  </>;
+}
+
+function PersonModal({ profile, people, onClose, onEdit, onSave, onAddRequest, onAddVisit, onRequestStatus }: {
   profile: { person: Person; editing: boolean } | null;
   people: Person[];
   onClose: () => void;
   onEdit: () => void;
   onSave: (person: Person) => void;
+  onAddRequest: (id: string, request: LeaveRequest) => void;
+  onAddVisit: (id: string, visit: HomeVisit) => void;
+  onRequestStatus: (personId: string, requestId: string, status: LeaveRequest['status']) => void;
 }) {
   const [draft, setDraft] = useState<Person | null>(profile?.person ?? null);
   const [photoEditing, setPhotoEditing] = useState<{ uri: string; framing?: PhotoFraming; directSave?: boolean } | null>(null);
@@ -2238,7 +2374,7 @@ function PersonModal({ profile, people, onClose, onEdit, onSave }: {
     );
   }
 
-  const person = profile.person;
+  const person = people.find(({ id }) => id === profile.person.id) ?? profile.person;
   return (
     <Sheet visible onClose={onClose}>
       <ScrollView style={styles.personSheetScroll} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
@@ -2262,6 +2398,11 @@ function PersonModal({ profile, people, onClose, onEdit, onSave }: {
         <DetailRow label="תחילת הקשר" value={displayPersonalDate(person.partner.relationshipStart) || 'לא צוין'} />
         <DetailRow label="כמה זמן ביחד" value={relationshipDuration(person.partner.relationshipStart)} last />
       </View>}
+      <PersonRecords key={person.id} person={person}
+        onAddRequest={(request) => onAddRequest(person.id, request)}
+        onAddVisit={(visit) => onAddVisit(person.id, visit)}
+        onStatus={(id, status) => onRequestStatus(person.id, id, status)}
+      />
       <Text style={[styles.sectionTitle, { marginTop: 20 }]}>סטטוס אישי</Text>
       {personStatusFields.map(({ key, label }) => (
         <View key={key} style={styles.personStatusDetail}>

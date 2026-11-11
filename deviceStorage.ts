@@ -47,6 +47,7 @@ function validPersonRecords(person: Record<string, unknown>) {
   if (leaveRequests !== undefined && (!rows(leaveRequests, (request) =>
     fields(request, ['id', ...requestFields.map(([key]) => key)])
     && requestStatuses.some((status) => request.status === status)
+    && (request.forwardedToCommander === undefined || typeof request.forwardedToCommander === 'boolean')
     && optionalDate(request.departureDate) && !!request.departureDate
     && optionalDate(request.returnDate) && !!request.returnDate
     && normalizeRequestTime(request.departureTime as string) === request.departureTime

@@ -28,6 +28,8 @@ test('WhatsApp request preserves descriptive departure and return times', () => 
     guardPosts: [], guardTimeSlots: [], guardAssignments: [], rosterEntries: [], absenceReasons: [], baseOptions: [], tasks: [],
   };
   assert.deepEqual(parseBackup(createBackup(data)), data);
+  data.people[0].leaveRequests[0].forwardedToCommander = true;
+  assert.deepEqual(parseBackup(createBackup(data)), data);
 });
 
 test('numeric times remain canonical and invalid times are rejected', () => {

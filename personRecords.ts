@@ -13,7 +13,7 @@ export const requestFields = [
 
 export type RequestFields = Record<typeof requestFields[number][0], string>;
 export const requestStatuses = ['ממתין', 'אושר', 'נדחה'] as const;
-export type LeaveRequest = RequestFields & { id: string; status: typeof requestStatuses[number] };
+export type LeaveRequest = RequestFields & { id: string; status: typeof requestStatuses[number]; forwardedToCommander?: boolean };
 export type HomeVisit = { id: string; date: string; summary: string; followUp: string };
 
 export function parseLeaveRequest(message: string): RequestFields {

@@ -41,6 +41,9 @@ export function normalizeRequestDate(value: string) {
 }
 
 export function normalizeRequestTime(value: string) {
-  const match = /^(\d{1,2}):([0-5]\d)$/.exec(value.trim());
-  return match && Number(match[1]) < 24 ? match[1].padStart(2, '0') + ':' + match[2] : undefined;
+  const text = value.replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '').trim().replace(/\s+/g, ' ');
+  const match = /^(\d{1,2}):([0-5]\d)$/.exec(text);
+  if (match && Number(match[1]) < 24) return match[1].padStart(2, '0') + ':' + match[2];
+  if (/^(?:בוקר|בבוקר|שעות הבוקר|לפנות בוקר|צהריים|בצהריים|שעות הצהריים|אחר הצהריים|אחרי הצהריים|אחה[״"]?צ|ערב|בערב|שעות הערב|לילה|בלילה|שעות הלילה)$/.test(text)) return text;
+  return undefined;
 }

@@ -2147,11 +2147,19 @@ function PersonRecords({ person, onAddRequest, onAddVisit, onStatus }: {
     const returnDate = normalizeRequestDate(draft.returnDate);
     const departureTime = normalizeRequestTime(draft.departureTime);
     const returnTime = normalizeRequestTime(draft.returnTime);
+    const invalidFields = [
+      !departureDate && 'תאריך יציאה',
+      !departureTime && 'שעת יציאה',
+      !returnDate && 'תאריך חזרה',
+      !returnTime && 'שעת חזרה',
+      !draft.reason.trim() && 'סיבת הבקשה',
+    ].filter(Boolean);
     if (!departureDate || !returnDate || !departureTime || !returnTime || !draft.reason.trim()) {
-      setError('יש למלא תאריכים, שעות וסיבת בקשה תקינים.');
+      setError(`יש לבדוק את השדות הבאים — ${invalidFields.join(' · ')}. בשעה אפשר למלא למשל 06:00, בוקר או אחר הצהריים.`);
       return;
     }
-    if (departureDate + departureTime >= returnDate + returnTime) {
+    const exactTimes = /^\d{2}:\d{2}$/.test(departureTime) && /^\d{2}:\d{2}$/.test(returnTime);
+    if (returnDate < departureDate || (returnDate === departureDate && exactTimes && returnTime <= departureTime)) {
       setError('מועד החזרה צריך להיות אחרי מועד היציאה.');
       return;
     }
@@ -2172,6 +2180,7 @@ function PersonRecords({ person, onAddRequest, onAddVisit, onStatus }: {
           <TextInput accessibilityLabel={label} multiline={key === 'reason'} style={styles.formInput} value={draft[key]} onChangeText={(value) => setDraft({ ...draft, [key]: value })} />
         </View>)}
         <Text style={styles.formHint}>הבקשה תישמר בתיק של {person.name}.</Text>
+        <Text style={styles.formHint}>אפשר להזין שעה מדויקת או חלק ביום, כמו בוקר ואחר הצהריים. כשאין שעה מדויקת, נשמר התיאור שהוזן.</Text>
         <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={saveRequest}><Text style={styles.primaryButtonText}>שמירת בקש״צ</Text></Pressable>
       </View>}
       {!!error && <Text accessibilityLiveRegion="polite" style={styles.peopleDeleteText}>{error}</Text>}

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadTypeScriptForTests } from './load-ts-for-tests.mjs';
 
-const { parseLeaveRequest, normalizeRequestDate, normalizeRequestTime } = loadTypeScriptForTests(new URL('../personRecords.ts', import.meta.url));
+const { parseLeaveRequest, normalizeRequestDate, normalizeRequestTime, displayRequestDate } = loadTypeScriptForTests(new URL('../personRecords.ts', import.meta.url));
 const { createBackup, parseBackup } = loadTypeScriptForTests(new URL('../deviceStorage.ts', import.meta.url));
 
 test('WhatsApp request preserves descriptive departure and return times', () => {
@@ -44,4 +44,24 @@ test('numeric times remain canonical and invalid times are rejected', () => {
 test('copied Hebrew descriptions tolerate direction marks and repeated spaces', () => {
   assert.equal(normalizeRequestTime('\u200f אחר   הצהריים \u200e'), 'אחר הצהריים');
   assert.equal(normalizeRequestTime('אחה״צ'), 'אחה״צ');
+});
+
+test('request summaries derive the weekday from the calendar date', () => {
+  assert.equal(displayRequestDate('2026-11-22'), 'יום ראשון · 22/11/2026');
+  assert.equal(displayRequestDate('23/11/2026'), 'יום שני · 23/11/2026');
+  assert.equal(displayRequestDate('1.1.27'), 'יום שישי · 01/01/2027');
+  assert.equal(displayRequestDate('invalid'), 'invalid');
+});
+
+test('request dates accept common separators and default the missing year', () => {
+  for (const value of ['17.11', '17/11', '17\\11', '17-11', ' 17 . 11 ', '\u200f17/11\u200e']) {
+    assert.equal(normalizeRequestDate(value, 2026), '2026-11-17');
+  }
+  for (const value of ['17.11.27', '17/11/2027', '17\\11\\27', '17-11-2027', '2027-11-17']) {
+    assert.equal(normalizeRequestDate(value, 2026), '2027-11-17');
+  }
+  assert.equal(normalizeRequestDate('31.11', 2026), undefined);
+  assert.equal(normalizeRequestDate('29/2', 2026), undefined);
+  assert.equal(normalizeRequestDate('29/2', 2028), '2028-02-29');
+  assert.equal(normalizeRequestDate('17/13', 2026), undefined);
 });

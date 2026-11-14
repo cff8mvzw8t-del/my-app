@@ -1,4 +1,4 @@
-import { normalizeRequestDate, normalizeRequestTime, parseLeaveRequest, requestFields, requestStatuses, type HomeVisit, type LeaveRequest, type RequestFields } from './personRecords';
+import { displayRequestDate, normalizeRequestDate, normalizeRequestTime, parseLeaveRequest, requestFields, requestStatuses, type HomeVisit, type LeaveRequest, type RequestFields } from './personRecords';
 import React, { useMemo, useState } from 'react';
 import {
   Animated,
@@ -853,6 +853,13 @@ function StoredApp({ stored }: { stored: LoadResult }) {
     setPeople((current) => current.map((person) => person.id === id ? update(person) : person));
   }
 
+  function deleteLeaveRequest(personId: string, requestId: string) {
+    updatePersonRecords(personId, (person) => ({
+      ...person,
+      leaveRequests: person.leaveRequests?.filter((request) => request.id !== requestId),
+    }));
+  }
+
   function updateRequestForwarding(personId: string, requestId: string, forwardedToCommander: boolean) {
     updatePersonRecords(personId, (person) => ({
       ...person,
@@ -1336,7 +1343,7 @@ function StoredApp({ stored }: { stored: LoadResult }) {
             </>
           )}
 
-          {tab === 'leaveRequests' && <DepartmentRequests people={people} onStatus={updateRequestStatus} onForward={updateRequestForwarding} />}
+          {tab === 'leaveRequests' && <DepartmentRequests people={people} onStatus={updateRequestStatus} onForward={updateRequestForwarding} onDelete={deleteLeaveRequest} />}
           {tab === 'journal' && <TrackingJournal people={people} events={trackingEvents} values={trackingValues} onValuesChange={setTrackingValues} onNewEvent={() => setTab('home')} onDelete={(id) => setTrackingEvents((current) => current.filter((event) => event.id !== id))} onReset={() => { setTrackingEvents([]); setTrackingNotice(false); }} />}
           {tab === 'tasks' && (
             <>
@@ -1451,6 +1458,7 @@ function StoredApp({ stored }: { stored: LoadResult }) {
         onAddVisit={(id, visit) => updatePersonRecords(id, (person) => ({ ...person, homeVisits: [visit, ...(person.homeVisits ?? [])] }))}
         onRequestStatus={updateRequestStatus}
         onRequestForward={updateRequestForwarding}
+        onRequestDelete={deleteLeaveRequest}
       />
       <Sheet visible={deletePeopleOpen} onClose={() => setDeletePeopleOpen(false)}>
         <Text style={styles.modalTitle}>מחיקת {selectedPeopleIds.length} אנשים?</Text>
@@ -2123,14 +2131,16 @@ function PeopleQuiz({ people, onClose }: { people: Person[]; onClose: () => void
   );
 }
 
-function LeaveRequestCard({ request, onStatus, onForward }: {
+function LeaveRequestCard({ request, onStatus, onForward, onDelete }: {
   request: LeaveRequest;
   onStatus: (status: LeaveRequest['status']) => void;
   onForward: (forwarded: boolean) => void;
+  onDelete: () => void;
 }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
   return <View style={styles.personStatusDetail}>
-    <DetailRow label="יציאה" value={displayPersonalDate(request.departureDate) + ' · ' + request.departureTime} />
-    <DetailRow label="חזרה" value={displayPersonalDate(request.returnDate) + ' · ' + request.returnTime} />
+    <DetailRow label="יציאה" value={displayRequestDate(request.departureDate) + ' · ' + request.departureTime} />
+    <DetailRow label="חזרה" value={displayRequestDate(request.returnDate) + ' · ' + request.returnTime} />
     {requestFields.slice(4).map(([key, label]) => <DetailRow key={key} label={label} value={request[key] || 'לא צוין'} />)}
     <ChoiceGroup label="הועבר למ״פ" options={['טרם הועבר', 'הועבר']} value={request.forwardedToCommander ? 'הועבר' : 'טרם הועבר'} onChange={(value) => onForward(value === 'הועבר')} />
     <View style={styles.choiceGroup}>
@@ -2145,15 +2155,24 @@ function LeaveRequestCard({ request, onStatus, onForward }: {
         })}
       </View>
     </View>
+    <Pressable accessibilityRole="button" style={styles.navigationAction} onPress={() => setConfirmDelete(true)}><Text style={styles.peopleDeleteText}>מחיקת בקש״צ</Text></Pressable>
+    {confirmDelete && <Sheet visible onClose={() => setConfirmDelete(false)}>
+      <Text style={styles.modalTitle}>למחוק את הבקש״צ?</Text>
+      <Text style={styles.sheetIntro}>יציאה · {displayRequestDate(request.departureDate)} · {request.departureTime}</Text>
+      <Text style={styles.sheetIntro}>חזרה · {displayRequestDate(request.returnDate)} · {request.returnTime}</Text>
+      <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => { setConfirmDelete(false); onDelete(); }}><Text style={styles.primaryButtonText}>כן, למחוק את הבקש״צ</Text></Pressable>
+      <Pressable accessibilityRole="button" style={styles.navigationAction} onPress={() => setConfirmDelete(false)}><Text style={styles.navigationActionText}>ביטול</Text></Pressable>
+    </Sheet>}
   </View>;
 }
 
-function PersonRecords({ person, onAddRequest, onAddVisit, onStatus, onForward }: {
+function PersonRecords({ person, onAddRequest, onAddVisit, onStatus, onForward, onDelete }: {
   person: Person;
   onAddRequest: (request: LeaveRequest) => void;
   onAddVisit: (visit: HomeVisit) => void;
   onStatus: (id: string, status: LeaveRequest['status']) => void;
   onForward: (id: string, forwarded: boolean) => void;
+  onDelete: (id: string) => void;
 }) {
   const [section, setSection] = useState<'requests' | 'visits' | null>(null);
   const [message, setMessage] = useState('');
@@ -2202,11 +2221,12 @@ function PersonRecords({ person, onAddRequest, onAddVisit, onStatus, onForward }
           <TextInput accessibilityLabel={label} multiline={key === 'reason'} style={styles.formInput} value={draft[key]} onChangeText={(value) => setDraft({ ...draft, [key]: value })} />
         </View>)}
         <Text style={styles.formHint}>הבקשה תישמר בתיק של {person.name}.</Text>
+        <Text style={styles.formHint}>אפשר לכתוב תאריך כמו 17.11, 17/11 או 17-11. בלי שנה, תיבחר השנה הנוכחית.</Text>
         <Text style={styles.formHint}>אפשר להזין שעה מדויקת או חלק ביום, כמו בוקר ואחר הצהריים. כשאין שעה מדויקת, נשמר התיאור שהוזן.</Text>
         <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={saveRequest}><Text style={styles.primaryButtonText}>שמירת בקש״צ</Text></Pressable>
       </View>}
       {!!error && <Text accessibilityLiveRegion="polite" style={styles.peopleDeleteText}>{error}</Text>}
-      {requests.map((request) => <LeaveRequestCard key={request.id} request={request} onStatus={(status) => onStatus(request.id, status)} onForward={(forwarded) => onForward(request.id, forwarded)} />)}
+      {requests.map((request) => <LeaveRequestCard key={request.id} request={request} onStatus={(status) => onStatus(request.id, status)} onForward={(forwarded) => onForward(request.id, forwarded)} onDelete={() => onDelete(request.id)} />)}
     </View>}
     <Pressable style={styles.navigationAction} accessibilityRole="button" accessibilityState={{ expanded: section === 'visits' }} onPress={() => { setSection(section === 'visits' ? null : 'visits'); setError(''); }}><Text style={styles.navigationActionText}>ביקורי בית · {visits.length}</Text></Pressable>
     {section === 'visits' && <View style={styles.personStatusDetail}>
@@ -2231,10 +2251,11 @@ function PersonRecords({ person, onAddRequest, onAddVisit, onStatus, onForward }
   </View>;
 }
 
-function DepartmentRequests({ people, onStatus, onForward }: {
+function DepartmentRequests({ people, onStatus, onForward, onDelete }: {
   people: Person[];
   onStatus: (personId: string, requestId: string, status: LeaveRequest['status']) => void;
   onForward: (personId: string, requestId: string, forwarded: boolean) => void;
+  onDelete: (personId: string, requestId: string) => void;
 }) {
   const [name, setName] = useState('');
   const [date, setDate] = useState('');
@@ -2253,12 +2274,12 @@ function DepartmentRequests({ people, onStatus, onForward }: {
     {!requests.length && <Text style={styles.sheetIntro}>אין בקשות בתצוגה.</Text>}
     {requests.map(({ person, request }) => <View key={person.id + '/' + request.id} style={styles.personStatusDetail}>
       <Text style={styles.sectionTitle}>{person.name}</Text>
-      <LeaveRequestCard request={request} onStatus={(next) => onStatus(person.id, request.id, next)} onForward={(forwarded) => onForward(person.id, request.id, forwarded)} />
+      <LeaveRequestCard request={request} onStatus={(next) => onStatus(person.id, request.id, next)} onForward={(forwarded) => onForward(person.id, request.id, forwarded)} onDelete={() => onDelete(person.id, request.id)} />
     </View>)}
   </>;
 }
 
-function PersonModal({ profile, people, onClose, onEdit, onSave, onAddRequest, onAddVisit, onRequestStatus, onRequestForward }: {
+function PersonModal({ profile, people, onClose, onEdit, onSave, onAddRequest, onAddVisit, onRequestStatus, onRequestForward, onRequestDelete }: {
   profile: { person: Person; editing: boolean } | null;
   people: Person[];
   onClose: () => void;
@@ -2268,6 +2289,7 @@ function PersonModal({ profile, people, onClose, onEdit, onSave, onAddRequest, o
   onAddVisit: (id: string, visit: HomeVisit) => void;
   onRequestStatus: (personId: string, requestId: string, status: LeaveRequest['status']) => void;
   onRequestForward: (personId: string, requestId: string, forwarded: boolean) => void;
+  onRequestDelete: (personId: string, requestId: string) => void;
 }) {
   const [draft, setDraft] = useState<Person | null>(profile?.person ?? null);
   const [photoEditing, setPhotoEditing] = useState<{ uri: string; framing?: PhotoFraming; directSave?: boolean } | null>(null);
@@ -2436,6 +2458,7 @@ function PersonModal({ profile, people, onClose, onEdit, onSave, onAddRequest, o
         onAddVisit={(visit) => onAddVisit(person.id, visit)}
         onStatus={(id, status) => onRequestStatus(person.id, id, status)}
         onForward={(id, forwarded) => onRequestForward(person.id, id, forwarded)}
+        onDelete={(id) => onRequestDelete(person.id, id)}
       />
       <Text style={[styles.sectionTitle, { marginTop: 20 }]}>סטטוס אישי</Text>
       {personStatusFields.map(({ key, label }) => (

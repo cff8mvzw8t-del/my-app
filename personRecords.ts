@@ -1,4 +1,4 @@
-import { normalizePersonalDate } from './personalDates';
+import { displayPersonalDate, normalizePersonalDate } from './personalDates';
 
 export const requestFields = [
   ['departureDate', 'תאריך יציאה'],
@@ -33,11 +33,22 @@ export function parseLeaveRequest(message: string): RequestFields {
   return draft;
 }
 
-export function normalizeRequestDate(value: string) {
-  const match = /^(\d{1,2})[./-](\d{1,2})[./-](\d{2}|\d{4})$/.exec(value.trim());
-  if (!match) return normalizePersonalDate(value);
+export function normalizeRequestDate(value: string, defaultYear = new Date().getFullYear()) {
+  const text = value.replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '').trim();
+  const match = /^(\d{1,2})\s*[.\/\\-]\s*(\d{1,2})(?:\s*[.\/\\-]\s*(\d{2}|\d{4}))?$/.exec(text);
+  if (!match) return normalizePersonalDate(text);
   const [, day, month, year] = match;
-  return normalizePersonalDate(`${day}/${month}/${year.length === 2 ? '20' + year : year}`);
+  const fullYear = year ? (year.length === 2 ? '20' + year : year) : String(defaultYear);
+  return normalizePersonalDate(`${day}/${month}/${fullYear}`);
+}
+
+export function displayRequestDate(value: string) {
+  const normalized = normalizeRequestDate(value);
+  if (!normalized) return value;
+  const [year, month, day] = normalized.split('-').map(Number);
+  const weekday = new Intl.DateTimeFormat('he-IL', { weekday: 'long', timeZone: 'UTC' })
+    .format(new Date(Date.UTC(year, month - 1, day)));
+  return `${weekday} · ${displayPersonalDate(normalized)}`;
 }
 
 export function normalizeRequestTime(value: string) {

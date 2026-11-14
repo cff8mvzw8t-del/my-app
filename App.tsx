@@ -2219,10 +2219,11 @@ function PersonRecords({ person, onAddRequest, onAddVisit, onStatus, onForward, 
       {draft && <View>
         {requestFields.map(([key, label]) => <View key={key}><Text style={styles.formLabel}>{label}</Text>
           <TextInput accessibilityLabel={label} multiline={key === 'reason'} style={styles.formInput} value={draft[key]} onChangeText={(value) => setDraft({ ...draft, [key]: value })} />
+          {(key === 'departureDate' || key === 'returnDate') && !!draft[key].trim() && <Text style={styles.formHint}>{normalizeRequestDate(draft[key]) ? `תאריך שיישמר · ${displayRequestDate(draft[key])}` : 'לא זוהה תאריך אחד תקין. אפשר לכתוב למשל 17.11.'}</Text>}
         </View>)}
         <Text style={styles.formHint}>הבקשה תישמר בתיק של {person.name}.</Text>
         <Text style={styles.formHint}>אפשר לכתוב תאריך כמו 17.11, 17/11 או 17-11. בלי שנה, תיבחר השנה הנוכחית.</Text>
-        <Text style={styles.formHint}>אפשר להזין שעה מדויקת או חלק ביום, כמו בוקר ואחר הצהריים. כשאין שעה מדויקת, נשמר התיאור שהוזן.</Text>
+        <Text style={styles.formHint}>אפשר להזין שעה מדויקת או תיאור חופשי בעברית, כמו ״הכי מוקדם שאוכל בערך בערב״. התיאור נשמר כפי שנכתב.</Text>
         <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={saveRequest}><Text style={styles.primaryButtonText}>שמירת בקש״צ</Text></Pressable>
       </View>}
       {!!error && <Text accessibilityLiveRegion="polite" style={styles.peopleDeleteText}>{error}</Text>}

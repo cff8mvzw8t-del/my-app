@@ -30,6 +30,8 @@ test('WhatsApp request preserves descriptive departure and return times', () => 
   assert.deepEqual(parseBackup(createBackup(data)), data);
   data.people[0].leaveRequests[0].forwardedToCommander = true;
   assert.deepEqual(parseBackup(createBackup(data)), data);
+  data.people[0].leaveRequests[0].returnTime = 'הכי מוקדם שאוכל בערך בערב';
+  assert.deepEqual(parseBackup(createBackup(data)), data);
 });
 
 test('numeric times remain canonical and invalid times are rejected', () => {
@@ -64,4 +66,17 @@ test('request dates accept common separators and default the missing year', () =
   assert.equal(normalizeRequestDate('29/2', 2026), undefined);
   assert.equal(normalizeRequestDate('29/2', 2028), '2028-02-29');
   assert.equal(normalizeRequestDate('17/13', 2026), undefined);
+});
+
+test('free-text request fields accept dates within sentences and Hebrew time descriptions', () => {
+  assert.equal(normalizeRequestDate('17.11 יום שלישי מאוחר', 2026), '2026-11-17');
+  assert.equal(normalizeRequestDate('ביום שני 16/11 בבוקר', 2026), '2026-11-16');
+  assert.equal(normalizeRequestDate('ביום שלישי 2026-11-17 מאוחר', 2026), '2026-11-17');
+  assert.equal(normalizeRequestTime('הכי מוקדם שאוכל בערך בערב'), 'הכי מוקדם שאוכל בערך בערב');
+  assert.equal(normalizeRequestTime('בסביבות 6 בערב'), 'בסביבות 6 בערב');
+  assert.equal(normalizeRequestTime('בערך ב־18:30'), 'בערך ב־18:30');
+  assert.equal(normalizeRequestTime('בערך ב־25:99'), undefined);
+  assert.equal(normalizeRequestDate('31.11 יום שלישי', 2026), undefined);
+  assert.equal(normalizeRequestDate('17.11 או 18.11', 2026), undefined);
+  assert.equal(normalizeRequestDate('17/11/20267', 2026), undefined);
 });
